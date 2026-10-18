@@ -1,0 +1,636 @@
+<title>Heat Shield Sizer</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600&family=Barlow+Semi+Condensed:wght@500;600;700&family=JetBrains+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: mission inputs on the left; results tiles, wall layup to scale, then three time-history charts. */
+:root {
+  --bg: #edeff2; --surface: #ffffff; --ink: #172028; --muted: #5a6670; --rule: #d4d9df; --grid: #e7eaee; --chip: #e2e6eb;
+  --heat: #c2501c; --cool: #2456c9; --back: #6b7a87; --limit: #8a2be2;
+  --ok: #1d7a46; --bad: #b42318; --tile: #f3d9c8; --bond: #c9b38a; --al: #b8c2cc;
+  --font-display: "Barlow Semi Condensed", "Arial Narrow", system-ui, sans-serif;
+  --font-body: "Barlow", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0e1217; --surface: #151b22; --ink: #e5e9ed; --muted: #95a1ac; --rule: #27313b; --grid: #1d252e; --chip: #1f2830;
+    --heat: #f08148; --cool: #7f9fff; --back: #9aa7b3; --limit: #c48cff; --ok: #5fd08f; --bad: #ff7b6e;
+    --tile: #6b4632; --bond: #6e6146; --al: #4f5b66; color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #0e1217; --surface: #151b22; --ink: #e5e9ed; --muted: #95a1ac; --rule: #27313b; --grid: #1d252e; --chip: #1f2830;
+  --heat: #f08148; --cool: #7f9fff; --back: #9aa7b3; --limit: #c48cff; --ok: #5fd08f; --bad: #ff7b6e;
+  --tile: #6b4632; --bond: #6e6146; --al: #4f5b66; color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body { background: var(--bg); color: var(--ink); font-family: var(--font-body); font-size: 15px; line-height: 1.5;
+  padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); padding-block: 20px 40px; }
+.wrap { max-width: 1240px; margin: 0 auto; display: grid; grid-template-columns: minmax(0, 1fr); gap: 18px; }
+header { display: flex; flex-wrap: wrap; align-items: end; justify-content: space-between; gap: 8px 24px; }
+h1 { font-family: var(--font-display); font-weight: 700; font-size: 2.1rem; margin: 0; line-height: 1.05; text-wrap: balance; }
+.sub { color: var(--muted); margin: 4px 0 0; max-width: 64ch; }
+.src { font-family: var(--font-mono); font-size: 0.78rem; color: var(--muted); }
+a { color: var(--cool); }
+.layout { display: grid; grid-template-columns: 300px minmax(0, 1fr); gap: 18px; align-items: start; }
+@media (max-width: 900px) { .layout { grid-template-columns: minmax(0, 1fr); } }
+.panel { background: var(--surface); border: 1px solid var(--rule); border-radius: 6px; padding: 16px; min-width: 0; }
+.rail { display: grid; gap: 18px; }
+.label { font-family: var(--font-display); font-weight: 600; font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); margin: 0 0 10px; }
+.field { display: grid; gap: 2px; }
+.field + .field { margin-top: 12px; }
+.field .top { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; font-size: 0.9rem; }
+.field output { font-family: var(--font-mono); font-size: 0.82rem; font-variant-numeric: tabular-nums; }
+.field small { color: var(--muted); font-size: 0.78rem; }
+input[type="range"] { width: 100%; accent-color: var(--heat); }
+.chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.chip { font: 500 0.86rem var(--font-body); border: 1px solid transparent; background: var(--chip); color: var(--ink); padding: 5px 10px; border-radius: 4px; cursor: pointer; }
+.chip[aria-pressed="true"] { background: var(--ink); color: var(--surface); }
+.btn { font: 600 0.84rem var(--font-display); letter-spacing: 0.06em; text-transform: uppercase; background: var(--ink); color: var(--surface); border: 0; border-radius: 4px; padding: 8px 14px; cursor: pointer; }
+.btn.ghost { background: transparent; color: var(--ink); border: 1px solid var(--rule); }
+.btn:disabled { opacity: 0.5; cursor: default; }
+.hint { color: var(--muted); font-size: 0.82rem; margin: 8px 0 0; }
+:focus-visible { outline: 2px solid var(--cool); outline-offset: 2px; }
+.main { display: grid; gap: 14px; min-width: 0; }
+.status { display: flex; align-items: center; gap: 10px; font-size: 0.9rem; min-height: 24px; }
+.dot { width: 8px; height: 8px; border-radius: 50%; background: var(--ok); flex: none; }
+.status.busy .dot { background: var(--heat); animation: pulse 1s infinite; }
+.status.error { color: var(--bad); } .status.error .dot { background: var(--bad); }
+@keyframes pulse { 50% { opacity: 0.3; } }
+@media (prefers-reduced-motion: reduce) { .status.busy .dot { animation: none; } }
+.tiles { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; }
+@media (max-width: 700px) { .tiles { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+.tile { background: var(--surface); border: 1px solid var(--rule); border-radius: 6px; padding: 10px 12px; min-width: 0; }
+.tile .k { font-family: var(--font-display); font-weight: 600; font-size: 0.74rem; text-transform: uppercase; letter-spacing: 0.07em; color: var(--muted); }
+.tile .v { font-family: var(--font-mono); font-size: 1.35rem; font-weight: 500; font-variant-numeric: tabular-nums; line-height: 1.3; }
+.tile .v small { font-size: 0.78rem; color: var(--muted); font-weight: 400; }
+.tile .s { font-size: 0.8rem; color: var(--muted); }
+.tile.lead { border-color: var(--ink); }
+.pill { font: 600 0.72rem var(--font-display); letter-spacing: 0.05em; text-transform: uppercase; padding: 1px 6px; border-radius: 3px; }
+.pill.ok { color: var(--ok); background: color-mix(in srgb, var(--ok) 14%, transparent); }
+.pill.bad { color: var(--bad); background: color-mix(in srgb, var(--bad) 14%, transparent); }
+.layup { display: grid; gap: 6px; }
+#layup { height: 76px; }
+canvas { display: block; width: 100%; }
+.charts { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+.charts .wide { grid-column: 1 / -1; }
+@media (max-width: 640px) { .charts { grid-template-columns: minmax(0, 1fr); } }
+.charts canvas { height: 240px; background: var(--surface); border: 1px solid var(--rule); border-radius: 6px; }
+.charts .wide canvas { height: 270px; }
+.table-wrap { overflow-x: auto; }
+table { border-collapse: collapse; width: 100%; font-size: 0.86rem; }
+th { font-family: var(--font-display); font-weight: 600; text-transform: uppercase; letter-spacing: 0.06em; font-size: 0.74rem; color: var(--muted); text-align: left; padding: 6px 12px 6px 0; border-bottom: 1px solid var(--rule); white-space: nowrap; }
+td { padding: 7px 12px 7px 0; border-bottom: 1px solid var(--grid); white-space: nowrap; }
+td.num { font-family: var(--font-mono); font-size: 0.82rem; font-variant-numeric: tabular-nums; }
+tr.best td:first-child { font-weight: 600; }
+footer { color: var(--muted); font-size: 0.82rem; max-width: 82ch; }
+</style>
+
+<div class="wrap">
+  <header>
+    <div>
+      <h1>Heat Shield Sizer</h1>
+      <p class="sub">Fly a capsule from entry interface, heat its stagnation point with Sutton–Graves, conduct that heat through tile, adhesive and aluminium skin, and find the thinnest tile that keeps the structure below its limit.</p>
+    </div>
+    <div class="src">port of <a href="https://github.com/badrelsayedNYU/reentry-tps" target="_blank" rel="noopener">badrelsayedNYU/reentry-tps</a></div>
+  </header>
+
+  <div class="layout">
+    <aside class="rail">
+      <section class="panel">
+        <p class="label">Entry conditions</p>
+        <div class="field"><div class="top"><label for="vE">Entry speed</label><output id="vEo"></output></div>
+          <input type="range" id="vE" min="6000" max="9000" step="50"><small>7.8 km/s is circular-orbit speed</small></div>
+        <div class="field"><div class="top"><label for="gam">Entry flight-path angle</label><output id="gamo"></output></div>
+          <input type="range" id="gam" min="-8" max="-0.5" step="0.1"></div>
+        <div class="field"><div class="top"><label for="beta">Ballistic coefficient β</label><output id="betao"></output></div>
+          <input type="range" id="beta" min="100" max="1000" step="10"><small>m / (C<sub>D</sub>A)</small></div>
+        <div class="field"><div class="top"><label for="ld">Lift-to-drag L/D</label><output id="ldo"></output></div>
+          <input type="range" id="ld" min="0" max="0.5" step="0.01"><small>0.3 is the Apollo command module trim value</small></div>
+        <div class="field"><div class="top"><label for="rn">Nose radius</label><output id="rno"></output></div>
+          <input type="range" id="rn" min="0.5" max="8" step="0.1"></div>
+      </section>
+      <section class="panel">
+        <p class="label">Heat-shield tile</p>
+        <div class="chips" id="mats"></div>
+        <p class="hint">Bond: 0.2 mm RTV-560. Structure: 2 mm aluminium 2219. Sized so the bondline peaks at 430 K, 20 K under the aluminium limit of 450 K.</p>
+        <div class="row" style="display:flex;gap:8px;margin-top:12px;flex-wrap:wrap">
+          <button class="btn ghost" id="reset" type="button">Reset to baseline</button>
+        </div>
+      </section>
+    </aside>
+
+    <main class="main">
+      <div class="status" id="status"><span class="dot"></span><span id="statusText"></span></div>
+      <div class="tiles" id="tiles"></div>
+
+      <section class="panel layup">
+        <p class="label" style="margin:0">Wall layup, drawn to scale</p>
+        <canvas id="layup" aria-label="Wall layup drawn to scale"></canvas>
+      </section>
+
+      <div class="charts">
+        <canvas id="cTraj" aria-label="Altitude against velocity"></canvas>
+        <canvas id="cQ" aria-label="Heat flux against time"></canvas>
+        <div class="wide"><canvas id="cT" aria-label="Temperatures against time"></canvas></div>
+      </div>
+
+      <section class="panel">
+        <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap">
+          <p class="label" style="margin:0">Which tile? Size all three for these conditions</p>
+          <button class="btn" id="compare" type="button">Compare tiles</button>
+        </div>
+        <div class="table-wrap" style="margin-top:10px">
+          <table>
+            <thead><tr><th>Tile</th><th>Density</th><th>Thickness</th><th>Areal mass</th><th>Peak surface</th><th>Max use</th><th>Surface</th></tr></thead>
+            <tbody id="cmp"><tr><td colspan="7" style="color:var(--muted)">Press Compare tiles to size LI-900, LI-2200 and FRCI-12 for the current entry.</td></tr></tbody>
+          </table>
+        </div>
+        <p class="hint">Areal mass includes all three layers. The lightest tile that passes its own surface limit is in bold.</p>
+      </section>
+
+      <footer>
+        Model: planar point-mass trajectory over a spherical, non-rotating Earth with an exponential atmosphere (ρ₀ = 1.225 kg/m³, H = 7.2 km), integrated from 120 km to 500 m/s. Sutton–Graves cold-wall stagnation heating with surface re-radiation (ε = 0.85). Implicit finite-volume conduction with temperature-dependent properties from NASA RP-1289, adiabatic back face, soak-back until the bondline peaks. Valid for non-ablating tiles below about 10 km/s; stagnation point only. This page is a JavaScript port of the Python model and reproduces its baseline (7.03 cm of LI-900, 43.7 W/cm², 129 MJ/m², bondline peak at 3464 s) and its parameter sweeps. Built by Badr Elsayed.
+      </footer>
+    </main>
+  </div>
+</div>
+
+<script id="tps-src">
+// Port of badrelsayedNYU/reentry-tps (src/tps/*) to JavaScript.
+// Trajectory (planar, spherical non-rotating Earth, exponential atmosphere) -> Sutton–Graves
+// stagnation heating -> implicit multi-layer conduction with re-radiation -> bondline sizing.
+const TPS = (() => {
+  const RHO0 = 1.225, H_SCALE = 7200, R_EARTH = 6.371e6, G0 = 9.80665, SIGMA = 5.670374419e-8;
+  const K_SG = 1.7415e-4;
+
+  // ---------- materials (NASA RP-1289, english units converted exactly to SI) ----------
+  const EN = { T: 1 / 1.8, k: 1.730734666, cp: 4186.8, rho: 16.01846337 };
+  const CP_TILE = { T: [210, 310, 460, 710, 960, 1210, 1460, 1710, 1960, 2160, 2210, 2460, 3460],
+    v: [0.070, 0.105, 0.150, 0.210, 0.252, 0.275, 0.288, 0.296, 0.300, 0.302, 0.303, 0.303, 0.303] };
+  const RAW = {
+    li900: { name: "LI-900 silica tile", rho: 9.0, eps: 0.85, maxT: 2760,
+      k: { T: [210, 460, 710, 960, 1210, 1460, 1710, 1960, 2210, 2460, 2760, 2960, 3260, 3460],
+           v: [0.0233, 0.0275, 0.0341, 0.0433, 0.0534, 0.0658, 0.0782, 0.0942, 0.1130, 0.1360, 0.1670, 0.1940, 0.2420, 0.2900] }, cp: CP_TILE },
+    li2200: { name: "LI-2200 silica tile", rho: 22.0, eps: 0.85, maxT: 3160,
+      k: { T: [210, 460, 710, 960, 1210, 1460, 1710, 1960, 2210, 2460, 2760, 2960, 3260, 3460],
+           v: [0.032, 0.043, 0.054, 0.065, 0.076, 0.088, 0.104, 0.119, 0.139, 0.160, 0.189, 0.212, 0.250, 0.280] }, cp: CP_TILE },
+    frci12: { name: "FRCI-12 fibrous insulation", rho: 12.0, eps: 0.85, maxT: 3160,
+      k: { T: [290, 535, 960, 1360, 1760, 2160, 2760], v: [0.0208, 0.0306, 0.0504, 0.0712, 0.0981, 0.1320, 0.1900] }, cp: CP_TILE },
+    rtv560: { name: "RTV-560 adhesive", rho: 88.0, maxT: 1010,
+      k: { T: [260, 360, 460, 660, 860, 960], v: [0.233, 0.250, 0.245, 0.200, 0.163, 0.146] },
+      cp: { T: [320, 360, 410, 460, 560, 660, 860], v: [0.273, 0.270, 0.260, 0.265, 0.285, 0.300, 0.340] } },
+    al2219: { name: "Aluminium 2219", rho: 175.6, maxT: 810,
+      k: { T: [40, 110, 160, 260, 360, 460, 560, 660, 760, 960, 1060, 1260], v: [13.0, 31.0, 39.0, 52.5, 61.5, 69.0, 74.0, 78.0, 82.0, 87.0, 89.4, 92.0] },
+      cp: { T: [535, 660, 760, 860, 960], v: [0.206, 0.215, 0.222, 0.228, 0.234] } },
+  };
+
+  function table(T, v) {
+    const n = T.length, cum = new Float64Array(n);
+    cum[0] = v[0] * T[0];
+    for (let j = 1; j < n; j++) cum[j] = cum[j - 1] + 0.5 * (v[j] + v[j - 1]) * (T[j] - T[j - 1]);
+    const find = x => { let lo = 0, hi = n - 1; while (hi - lo > 1) { const m = (lo + hi) >> 1; if (T[m] <= x) lo = m; else hi = m; } return lo; };
+    return {
+      at(x) { if (x <= T[0]) return v[0]; if (x >= T[n - 1]) return v[n - 1]; const j = find(x); return v[j] + (v[j + 1] - v[j]) * (x - T[j]) / (T[j + 1] - T[j]); },
+      integral(x) {
+        if (x <= T[0]) return v[0] * x;
+        if (x >= T[n - 1]) return cum[n - 1] + v[n - 1] * (x - T[n - 1]);
+        const j = find(x), d = x - T[j], s = (v[j + 1] - v[j]) / (T[j + 1] - T[j]);
+        return cum[j] + v[j] * d + 0.5 * s * d * d;
+      },
+    };
+  }
+
+  const MATERIALS = {};
+  for (const [key, m] of Object.entries(RAW)) {
+    MATERIALS[key] = {
+      key, name: m.name, rho: m.rho * EN.rho, eps: m.eps, maxT: m.maxT * EN.T,
+      k: table(m.k.T.map(t => t * EN.T), m.k.v.map(x => x * EN.k)),
+      cp: table(m.cp.T.map(t => t * EN.T), m.cp.v.map(x => x * EN.cp)),
+    };
+  }
+
+  // ---------- U.S. Standard Atmosphere 1976 temperature (0-86 km, constant above) ----------
+  const LAYERS = [[0, 288.15, -0.0065], [11000, 216.65, 0], [20000, 216.65, 0.001], [32000, 228.65, 0.0028],
+    [47000, 270.65, 0], [51000, 270.65, -0.0028], [71000, 214.65, -0.002]];
+  function tempUS76(h) {
+    const Hg = Math.min(6356766 * h / (6356766 + h), 84852);
+    let i = 0; while (i < LAYERS.length - 1 && Hg >= LAYERS[i + 1][0]) i++;
+    return LAYERS[i][1] + LAYERS[i][2] * (Hg - LAYERS[i][0]);
+  }
+
+  // ---------- trajectory: RK4 at fixed step, events located by linear interpolation ----------
+  function fly({ V_E, gamma_E_deg, beta, LD, h_E = 120e3, V_cutoff = 500, dt = 0.05 }) {
+    const f = (y) => {
+      const [V, g, h] = y, rho = RHO0 * Math.exp(-h / H_SCALE), Dm = rho * V * V / (2 * beta);
+      const r = R_EARTH + h, gr = G0 * (R_EARTH / r) ** 2;
+      return [-Dm - gr * Math.sin(g), (LD * Dm - (gr - V * V / r) * Math.cos(g)) / V, V * Math.sin(g), V * R_EARTH / r * Math.cos(g)];
+    };
+    let y = [V_E, gamma_E_deg * Math.PI / 180, h_E, 0], t = 0;
+    const T = [0], V = [y[0]], Gm = [y[1]], H = [y[2]], S = [0];
+    for (let n = 0; n < 2e6; n++) {
+      const k1 = f(y), y2 = y.map((v, i) => v + 0.5 * dt * k1[i]);
+      const k2 = f(y2), y3 = y.map((v, i) => v + 0.5 * dt * k2[i]);
+      const k3 = f(y3), y4 = y.map((v, i) => v + dt * k3[i]);
+      const k4 = f(y4);
+      const yn = y.map((v, i) => v + dt / 6 * (k1[i] + 2 * k2[i] + 2 * k3[i] + k4[i]));
+      const tn = t + dt;
+      let frac = null;
+      if (yn[1] > 0 && yn[2] > h_E + 1) throw new Error(`Skip-out: at ${V_E} m/s and ${gamma_E_deg}° the vehicle climbs back out of the atmosphere. Steepen the entry angle.`);
+      if (yn[0] <= V_cutoff) frac = (y[0] - V_cutoff) / (y[0] - yn[0]);
+      if (yn[2] <= 0) { const fh = y[2] / (y[2] - yn[2]); frac = frac === null ? fh : Math.min(frac, fh); }
+      if (frac !== null) {
+        const ye = y.map((v, i) => v + frac * (yn[i] - v));
+        T.push(t + frac * dt); V.push(ye[0]); Gm.push(ye[1]); H.push(ye[2]); S.push(ye[3]);
+        break;
+      }
+      y = yn; t = tn; T.push(t); V.push(y[0]); Gm.push(y[1]); H.push(y[2]); S.push(y[3]);
+    }
+    const n = T.length, rho = new Float64Array(n), q = new Float64Array(n), gload = new Float64Array(n), Tinf = new Float64Array(n);
+    for (let i = 0; i < n; i++) {
+      rho[i] = RHO0 * Math.exp(-H[i] / H_SCALE);
+      gload[i] = rho[i] * V[i] * V[i] / (2 * beta) * Math.sqrt(1 + LD * LD) / G0;
+      Tinf[i] = tempUS76(H[i]);
+    }
+    return { t: Float64Array.from(T), V: Float64Array.from(V), gamma: Float64Array.from(Gm), h: Float64Array.from(H), s: Float64Array.from(S), rho, gload, Tinf };
+  }
+
+  function interp(x, xs, ys, right) {
+    const n = xs.length;
+    if (x <= xs[0]) return ys[0];
+    if (x >= xs[n - 1]) return right === undefined ? ys[n - 1] : right;
+    let lo = 0, hi = n - 1; while (hi - lo > 1) { const m = (lo + hi) >> 1; if (xs[m] <= x) lo = m; else hi = m; }
+    return ys[lo] + (ys[hi] - ys[lo]) * (x - xs[lo]) / (xs[hi] - xs[lo]);
+  }
+
+  // ---------- wall ----------
+  function makeWall(layers) {
+    const dx = [], owner = [];
+    layers.forEach((L, idx) => {
+      const { n, stretch: r = 1, thickness: th } = L;
+      for (let j = 0; j < n; j++) { dx.push(r === 1 ? th / n : th * (r - 1) / (r ** n - 1) * r ** j); owner.push(idx); }
+    });
+    const N = dx.length, x = new Float64Array(N);
+    let f = 0; for (let i = 0; i < N; i++) { x[i] = f + dx[i] / 2; f += dx[i]; }
+    return { layers, N, dx: Float64Array.from(dx), owner, x, thickness: f, mat: owner.map(i => layers[i].material),
+      rho: Float64Array.from(owner.map(i => layers[i].material.rho)), bondDepth: layers[0].thickness };
+  }
+
+  // ---------- coupled run: backward Euler, Picard on k, Newton on e(T) and surface flux ----------
+  function runCoupled(traj, wall, { Rn, eps, T0 = 295, dt = 0.5, soak = 1800, keepEvery = 10, earlyStop = false }) {
+    const N = wall.N, M = N + 2, { dx, rho, mat } = wall;
+    const qTraj = new Float64Array(traj.t.length);
+    for (let i = 0; i < qTraj.length; i++) qTraj[i] = K_SG * Math.sqrt(traj.rho[i] / Rn) * traj.V[i] ** 3;
+    const tHeat = traj.t[traj.t.length - 1], tEnd = tHeat + soak;
+    const qAt = t => interp(t, traj.t, qTraj, 0), TinfAt = t => interp(t, traj.t, traj.Tinf);
+
+    const kc = new Float64Array(N), g = new Float64Array(N + 1); // g[0]=front, g[1..N-1]=interior, g[N]=back
+    const cond = (u) => {
+      for (let i = 0; i < N; i++) kc[i] = mat[i].k.at(u[i + 1]);
+      g[0] = 2 * kc[0] / dx[0];
+      for (let i = 1; i < N; i++) g[i] = 1 / (dx[i - 1] / (2 * kc[i - 1]) + dx[i] / (2 * kc[i]));
+      g[N] = 2 * kc[N - 1] / dx[N - 1];
+    };
+    const lo = new Float64Array(M), di = new Float64Array(M), up = new Float64Array(M), rhs = new Float64Array(M);
+    const cp_ = new Float64Array(M), dp_ = new Float64Array(M);
+    function thomas(out) {
+      cp_[0] = up[0] / di[0]; dp_[0] = rhs[0] / di[0];
+      for (let i = 1; i < M; i++) { const m = di[i] - lo[i] * cp_[i - 1]; cp_[i] = up[i] / m; dp_[i] = (rhs[i] - lo[i] * dp_[i - 1]) / m; }
+      out[M - 1] = dp_[M - 1];
+      for (let i = M - 2; i >= 0; i--) out[i] = dp_[i] - cp_[i] * out[i + 1];
+    }
+    const frontRow = (t, Ts, gf) => { // q(T) - g (Ts - T1) = 0, linearized
+      const q0 = qAt(t) - eps * SIGMA * (Ts ** 4 - TinfAt(t) ** 4), dq = -4 * eps * SIGMA * Ts ** 3;
+      return [dq - gf, gf, -q0 + dq * Ts];
+    };
+
+    let u = new Float64Array(M).fill(T0);
+    cond(u);
+    for (let it = 0; it < 50; it++) { const [a, b, c] = frontRow(0, u[0], g[0]); const nw = (c - b * u[1]) / a; const done = Math.abs(nw - u[0]) < 1e-6; u[0] = nw; if (done) break; }
+
+    // bondline sits at the shield/bondline face: interpolate between the two adjacent cell centres
+    const nS = wall.layers[0].n, xb = wall.bondDepth, wA = (xb - wall.x[nS - 1]) / (wall.x[nS] - wall.x[nS - 1]);
+    const Tbond = u_ => u_[nS] + wA * (u_[nS + 1] - u_[nS]);
+
+    const hist = { t: [0], Ts: [u[0]], Tb: [Tbond(u)], Tback: [u[M - 1]], q: [qAt(0)], qrad: [eps * SIGMA * (u[0] ** 4 - TinfAt(0) ** 4)] };
+    let peakTs = u[0], tPeakTs = 0, peakTb = Tbond(u), tPeakTb = 0, peakQ = qAt(0), tPeakQ = 0, load = 0, qPrev = qAt(0);
+    let lastTb = peakTb, profiles = [], nextProfile = 0;
+    const profileTimes = [];
+    const eOld = new Float64Array(N), uStar = new Float64Array(M), uNew = new Float64Array(M);
+    let t = 0, step = 0;
+    while (t < tEnd - 1e-12 * Math.max(1, tEnd)) {
+      const h = Math.min(dt, tEnd - t), tn = t + h;
+      for (let i = 0; i < N; i++) eOld[i] = mat[i].cp.integral(u[i + 1]);
+      uStar.set(u);
+      let it = 0;
+      for (; it < 50; it++) {
+        cond(uStar);
+        let [a, b, c] = frontRow(tn, uStar[0], g[0]);
+        di[0] = a; up[0] = b; rhs[0] = c; lo[0] = 0;
+        for (let i = 0; i < N; i++) {
+          const T = uStar[i + 1], cap = rho[i] * dx[i] * mat[i].cp.at(T) / h, gl = g[i], gr = g[i + 1];
+          lo[i + 1] = -gl; di[i + 1] = cap + gl + gr; up[i + 1] = -gr;
+          rhs[i + 1] = cap * T - rho[i] * dx[i] * (mat[i].cp.integral(T) - eOld[i]) / h;
+        }
+        di[M - 1] = -g[N]; lo[M - 1] = g[N]; up[M - 1] = 0; rhs[M - 1] = 0; // adiabatic back face
+        thomas(uNew);
+        let ch = 0; for (let i = 0; i < M; i++) ch = Math.max(ch, Math.abs(uNew[i] - uStar[i]));
+        uStar.set(uNew);
+        if (ch < 1e-6) break;
+      }
+      if (it >= 50) throw new Error("The conduction solver did not converge at t = " + tn.toFixed(1) + " s.");
+      u.set(uStar); t = tn; step++;
+      const q = qAt(t), tb = Tbond(u);
+      load += 0.5 * (q + qPrev) * h; qPrev = q;
+      if (q > peakQ) { peakQ = q; tPeakQ = t; }
+      if (u[0] > peakTs) { peakTs = u[0]; tPeakTs = t; }
+      if (tb > peakTb) { peakTb = tb; tPeakTb = t; }
+      lastTb = tb;
+      // sizing only needs the peak: once past the initial soak window and clearly past a peak, stop
+      if (earlyStop && t >= tHeat + 1800 && tPeakTb < t && tb < peakTb - 0.01) break;
+      if (step % keepEvery === 0 || t >= tEnd - 1e-9) {
+        hist.t.push(t); hist.Ts.push(u[0]); hist.Tb.push(tb); hist.Tback.push(u[M - 1]); hist.q.push(q);
+        hist.qrad.push(eps * SIGMA * (u[0] ** 4 - TinfAt(t) ** 4));
+      }
+    }
+    const captured = tPeakTb < t - 1e-9 && lastTb < peakTb - 1e-6;
+    return { hist, peakQ, tPeakQ, load, peakTs, tPeakTs, peakTb, tPeakTb, captured, tHeat, tEnd: t };
+  }
+
+  function caseWall(c, L) {
+    return makeWall([
+      { material: MATERIALS[c.shield], thickness: L, n: 60, stretch: 1.05 },
+      { material: MATERIALS.rtv560, thickness: 0.0002, n: 4 },
+      { material: MATERIALS.al2219, thickness: 0.002, n: 6 },
+    ]);
+  }
+
+  function simulate(c, L, traj, opts = {}) {
+    let soak = opts.soak ?? 1800;
+    while (true) {
+      const r = runCoupled(traj, caseWall(c, L), { Rn: c.Rn, eps: MATERIALS[c.shield].eps, ...opts, soak });
+      if (opts.earlyStop) return r;
+      if (r.captured || soak >= 4 * 3600) return r;
+      soak = Math.min(2 * soak, 4 * 3600);
+    }
+  }
+
+  // Thinnest shield whose peak bondline temperature is <= target (bisection; never too thin, at most tol thicker).
+  // Secant iteration on peak bondline temperature vs thickness (smooth and decreasing), then a bracket
+  // check: the answer passes, and an answer tol thinner fails. So it is never too thin and at most tol
+  // thicker than needed, the same guarantee as the Python sizing.
+  function size(c, traj, { lo = 0.002, hi = 0.25, tol = 1e-4, target = 430, guess = 0.06, onRun } = {}) {
+    let runs = 0;
+    const f = L => { runs++; onRun && onRun(runs, L); return simulate(c, L, traj, { keepEvery: 1e9, earlyStop: true, soak: 4 * 3600 }).peakTb - target; };
+    let x0 = Math.min(Math.max(guess, lo), hi), x1 = Math.min(x0 * 1.25 + 0.005, hi);
+    let f0 = f(x0), f1 = f(x1);
+    for (let k = 0; k < 20 && Math.abs(x1 - x0) > tol / 4; k++) {
+      if (f1 === f0) break;
+      let x2 = x1 - f1 * (x1 - x0) / (f1 - f0);
+      x2 = Math.min(Math.max(x2, lo), hi);
+      x0 = x1; f0 = f1; x1 = x2; f1 = f(x1);
+      if (x1 === hi && f1 > 0) return { thickness: null, tooThick: true, runs };
+      if (x1 === lo && f1 <= 0) return { thickness: lo, runs };
+    }
+    let up = Math.min(x1 + tol / 2, hi);
+    while (f(up) > 0) { if (up >= hi) return { thickness: null, tooThick: true, runs }; up = Math.min(up + tol, hi); }
+    while (up - tol >= lo && f(up - tol) <= 0) up -= tol;
+    return { thickness: up, runs };
+  }
+
+  function arealMass(c, L) { return MATERIALS[c.shield].rho * L + MATERIALS.rtv560.rho * 0.0002 + MATERIALS.al2219.rho * 0.002; }
+
+  return { MATERIALS, fly, simulate, size, arealMass, tempUS76, caseWall };
+})();
+
+
+</script>
+<script>
+(() => {
+  const BASE = {"params":{"V_E":7800,"gamma_E_deg":-1.5,"beta":400,"LD":0.3,"Rn":4,"shield":"li900"},"thickness":0.0702941364369254,"runs":8,"traj":{"t":[0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31,32,33,34,35,36,37,38,39,40,41,42,43,44,45,46,47,48,49,50,51,52,53,54,55,56,57,58,59,60,61,62,63,64,65,66,67,68,69,70,71,72,73,74,75,76,77,78,79,80,81,82,83,84,85,86,87,88,89,90,91,92,93,94,95,96,97,98,99,100,101,102,103,104,105,106,107,108,109,110,111,112,113,114,115,116,117,118,119,120,121,122,123,124,125,126,127,128,129,130,131,132,133,134,135,136,137,138,139,140,141,142,143,144,145,146,147,148,149,150,151,152,153,154,155,156,157,158,159,160,161,162,163,164,165,166,167,168,169,170,171,172,173,174,175,176,177,178,179,180,181,182,183,184,185,186,187,188,189,190,191,192,193,194,195,196,197,198,199,200,201,202,203,204,205,206,207,208,209,210,211,212,213,214,215,216,217,218,219,220,221,222,223,224,225,226,227,228,229,230,231,232,233,234,235,236,237,238,239,240,241,242,243,244,245,246,247,248,249,250,251,252,253,254,255,256,257,258,259,260,261,262,263,264,265,266,267,268,269,270,271,272,273,274,275,276,277,278,279,280,281,282,283,284,285,286,287,288,289,290,291,292,293,294,295,296,297,298,299,300,301,302,303,304,305,306,307,308,309,310,311,312,313,314,315,316,317,318,319,320,321,322,323,324,325,326,327,328,329,330,331,332,333,334,335,336,337,338,339,340,341,342,343,344,345,346,347,348,349,350,351,352,353,354,355,356,357,358,359,360,361,362,363,364,365,366,367,368,369,370,371,372,373,374,375,376,377,378,379,380,381,382,383,384,385,386,387,388,389,390,391,392,393,394,395,396,397,398,399,400,401,402,403,404,405,406,407,408,409,410,411,412,413,414,415,416,417,418,419,420,421,422,423,424,425,426,427,428,429,430,431,432,433,434,435,436,437,438,439,440,441,442,443,444,445,446,447,448,449,450,451,452,453,454,455,456,457,458,459,460,461,462,463,464,465,466,467,468,469,470,471,472,473,474,475,476,477,478,479,480,481,482,483,484,485,486,487,488,489,490,491,492,493,494,495,496,497,498,499,500,501,502,503,504,505,506,507,508,509,510,511,512,513,514,515,516,517,518,519,520,521,522,523,524,525,526,527,528,529,530,531,532,533,534,535,536,537,538,539,540,541,542,543,544,545,546,547,548,549,550,551,552,553,554,555,556,557,558,559,560,561,562,563,564,565,566,567,568,569,570,571,572,573,574,575,576,577,578,579,580,581,582,583,584,585,586,587,588,589,590,591,592,593,594,595,596,597,598,599,600,601,602,603,604,605,606,607,608,609,610,611,612,613,614,615,616,617,618,619,620,621,622,623,624,625,626,627,628,629,630,631,632,633,634,635,636,637,638,639,640,641,642,643,644,645,646,647,648,649,650,651,652,653,654,655,656,657,658,659,660,661,662,663,664,665,666,667,668,669,670,671,672,673,674,675,676,677,678,679,680,681,682,683,684,685,686,687,688,689,690,691,692,693,694,695,696,697,698,699,700,701,702,703,704,705,706,707,708,709,710,711,712,713,714,715,716,717,718,719,719.805],"V":[7800,7800.24,7800.48,7800.73,7800.97,7801.21,7801.45,7801.69,7801.93,7802.17,7802.42,7802.66,7802.9,7803.14,7803.38,7803.62,7803.86,7804.1,7804.34,7804.58,7804.82,7805.06,7805.3,7805.54,7805.78,7806.02,7806.26,7806.49,7806.73,7806.97,7807.21,7807.45,7807.68,7807.92,7808.16,7808.39,7808.63,7808.86,7809.1,7809.33,7809.57,7809.8,7810.04,7810.27,7810.5,7810.73,7810.97,7811.2,7811.43,7811.66,7811.89,7812.12,7812.35,7812.57,7812.8,7813.03,7813.25,7813.48,7813.7,7813.93,7814.15,7814.37,7814.59,7814.81,7815.03,7815.25,7815.47,7815.69,7815.9,7816.12,7816.33,7816.54,7816.76,7816.97,7817.17,7817.38,7817.59,7817.79,7818,7818.2,7818.4,7818.6,7818.8,7819,7819.19,7819.38,7819.57,7819.76,7819.95,7820.14,7820.32,7820.5,7820.68,7820.86,7821.03,7821.21,7821.38,7821.54,7821.71,7821.87,7822.03,7822.19,7822.34,7822.5,7822.64,7822.79,7822.93,7823.07,7823.21,7823.34,7823.47,7823.59,7823.71,7823.83,7823.94,7824.05,7824.15,7824.25,7824.35,7824.44,7824.52,7824.6,7824.67,7824.74,7824.81,7824.87,7824.92,7824.97,7825.01,7825.04,7825.07,7825.09,7825.1,7825.11,7825.11,7825.1,7825.08,7825.06,7825.02,7824.98,7824.93,7824.87,7824.8,7824.72,7824.63,7824.54,7824.43,7824.31,7824.18,7824.03,7823.88,7823.71,7823.53,7823.34,7823.14,7822.92,7822.68,7822.44,7822.18,7821.9,7821.61,7821.3,7820.97,7820.63,7820.27,7819.89,7819.49,7819.08,7818.64,7818.18,7817.71,7817.21,7816.69,7816.14,7815.58,7814.99,7814.37,7813.73,7813.07,7812.37,7811.65,7810.91,7810.13,7809.32,7808.48,7807.62,7806.71,7805.78,7804.81,7803.81,7802.77,7801.69,7800.58,7799.43,7798.24,7797,7795.73,7794.41,7793.05,7791.64,7790.19,7788.69,7787.14,7785.54,7783.89,7782.19,7780.43,7778.62,7776.75,7774.82,7772.84,7770.79,7768.69,7766.52,7764.28,7761.98,7759.61,7757.17,7754.66,7752.08,7749.42,7746.69,7743.88,7740.99,7738.02,7734.97,7731.84,7728.62,7725.31,7721.92,7718.43,7714.85,7711.18,7707.41,7703.55,7699.58,7695.52,7691.35,7687.08,7682.71,7678.22,7673.63,7668.93,7664.11,7659.18,7654.14,7648.98,7643.7,7638.3,7632.78,7627.14,7621.38,7615.49,7609.47,7603.33,7597.06,7590.66,7584.13,7577.47,7570.68,7563.76,7556.7,7549.51,7542.18,7534.72,7527.13,7519.4,7511.53,7503.53,7495.4,7487.13,7478.72,7470.18,7461.51,7452.7,7443.77,7434.7,7425.5,7416.17,7406.71,7397.13,7387.42,7377.58,7367.63,7357.55,7347.36,7337.04,7326.62,7316.08,7305.43,7294.67,7283.81,7272.85,7261.78,7250.62,7239.36,7228.02,7216.58,7205.06,7193.45,7181.77,7170.01,7158.17,7146.27,7134.3,7122.27,7110.18,7098.03,7085.83,7073.58,7061.29,7048.95,7036.57,7024.16,7011.71,6999.24,6986.74,6974.22,6961.68,6949.13,6936.56,6923.99,6911.4,6898.82,6886.23,6873.65,6861.07,6848.51,6835.95,6823.4,6810.88,6798.37,6785.88,6773.42,6760.98,6748.57,6736.19,6723.84,6711.53,6699.25,6687.01,6674.81,6662.64,6650.52,6638.44,6626.41,6614.42,6602.48,6590.59,6578.74,6566.95,6555.2,6543.51,6531.87,6520.28,6508.74,6497.25,6485.82,6474.44,6463.12,6451.84,6440.63,6429.46,6418.35,6407.29,6396.29,6385.34,6374.44,6363.59,6352.79,6342.05,6331.36,6320.71,6310.12,6299.57,6289.08,6278.63,6268.23,6257.87,6247.56,6237.29,6227.07,6216.89,6206.75,6196.65,6186.58,6176.56,6166.58,6156.63,6146.71,6136.83,6126.98,6117.16,6107.38,6097.62,6087.89,6078.18,6068.5,6058.84,6049.21,6039.59,6030,6020.42,6010.86,6001.32,5991.78,5982.26,5972.76,5963.26,5953.76,5944.28,5934.8,5925.32,5915.84,5906.36,5896.88,5887.4,5877.91,5868.41,5858.91,5849.4,5839.87,5830.33,5820.77,5811.2,5801.61,5792,5782.36,5772.7,5763.02,5753.3,5743.56,5733.78,5723.97,5714.12,5704.24,5694.31,5684.35,5674.34,5664.28,5654.17,5644.02,5633.81,5623.55,5613.23,5602.85,5592.42,5581.91,5571.35,5560.71,5550.01,5539.23,5528.38,5517.45,5506.45,5495.36,5484.19,5472.93,5461.58,5450.14,5438.61,5426.98,5415.25,5403.42,5391.49,5379.45,5367.31,5355.05,5342.68,5330.19,5317.59,5304.86,5292.01,5279.04,5265.93,5252.7,5239.33,5225.83,5212.19,5198.41,5184.48,5170.41,5156.2,5141.83,5127.31,5112.64,5097.81,5082.82,5067.68,5052.37,5036.89,5021.26,5005.45,4989.47,4973.33,4957.01,4940.52,4923.86,4907.02,4890,4872.8,4855.43,4837.87,4820.14,4802.23,4784.13,4765.86,4747.4,4728.77,4709.95,4690.96,4671.78,4652.43,4632.89,4613.19,4593.3,4573.24,4553.01,4532.61,4512.04,4491.31,4470.4,4449.34,4428.12,4406.73,4385.2,4363.51,4341.68,4319.7,4297.57,4275.31,4252.92,4230.39,4207.74,4184.96,4162.07,4139.06,4115.94,4092.71,4069.38,4045.96,4022.44,3998.83,3975.14,3951.37,3927.53,3903.61,3879.63,3855.59,3831.5,3807.35,3783.16,3758.92,3734.65,3710.34,3686,3661.64,3637.26,3612.87,3588.46,3564.04,3539.62,3515.2,3490.78,3466.37,3441.97,3417.59,3393.22,3368.87,3344.55,3320.25,3295.98,3271.74,3247.54,3223.37,3199.25,3175.16,3151.12,3127.13,3103.18,3079.28,3055.43,3031.64,3007.89,2984.21,2960.57,2937,2913.48,2890.03,2866.63,2843.29,2820.02,2796.81,2773.66,2750.57,2727.54,2704.58,2681.68,2658.85,2636.08,2613.37,2590.73,2568.15,2545.64,2523.19,2500.8,2478.48,2456.22,2434.02,2411.88,2389.81,2367.8,2345.85,2323.97,2302.14,2280.38,2258.67,2237.03,2215.45,2193.93,2172.47,2151.07,2129.73,2108.45,2087.23,2066.07,2044.96,2023.92,2002.94,1982.02,1961.16,1940.36,1919.62,1898.94,1878.32,1857.77,1837.27,1816.84,1796.48,1776.18,1755.94,1735.77,1715.67,1695.63,1675.66,1655.76,1635.94,1616.18,1596.5,1576.89,1557.36,1537.91,1518.54,1499.24,1480.03,1460.9,1441.86,1422.91,1404.04,1385.27,1366.59,1348,1329.51,1311.12,1292.83,1274.65,1256.57,1238.6,1220.74,1203,1185.36,1167.85,1150.45,1133.18,1116.03,1099.01,1082.12,1065.36,1048.73,1032.25,1015.89,999.686,983.621,967.702,951.932,936.312,920.845,905.534,890.379,875.384,860.551,845.881,831.377,817.041,802.874,788.878,775.055,761.406,747.934,734.639,721.523,708.588,695.834,683.264,670.877,658.675,646.659,634.829,623.187,611.733,600.467,589.389,578.501,567.801,557.291,546.969,536.836,526.892,517.135,507.566,500],"h":[120000,119796,119591,119387,119183,118978,118774,118569,118364,118159,117954,117749,117544,117339,117134,116929,116723,116518,116312,116107,115901,115695,115489,115284,115078,114872,114666,114459,114253,114047,113841,113634,113428,113221,113014,112808,112601,112394,112187,111980,111773,111566,111359,111152,110944,110737,110530,110322,110115,109907,109699,109492,109284,109076,108868,108660,108452,108244,108036,107828,107620,107411,107203,106994,106786,106577,106369,106160,105952,105743,105534,105325,105116,104908,104699,104490,104281,104071,103862,103653,103444,103235,103025,102816,102606,102397,102187,101978,101768,101559,101349,101139,100930,100720,100510,100300,100090,99880.6,99670.7,99460.8,99250.8,99040.8,98830.8,98620.7,98410.7,98200.6,97990.5,97780.3,97570.2,97360,97149.8,96939.6,96729.4,96519.1,96308.9,96098.6,95888.4,95678.1,95467.8,95257.5,95047.2,94836.9,94626.6,94416.3,94206,93995.8,93785.5,93575.2,93364.9,93154.7,92944.4,92734.2,92524,92313.8,92103.7,91893.5,91683.4,91473.3,91263.2,91053.2,90843.2,90633.3,90423.4,90213.5,90003.7,89793.9,89584.1,89374.5,89164.9,88955.3,88745.8,88536.4,88327,88117.7,87908.5,87699.4,87490.3,87281.4,87072.5,86863.7,86655,86446.5,86238,86029.7,85821.4,85613.3,85405.3,85197.4,84989.7,84782.1,84574.7,84367.4,84160.3,83953.3,83746.5,83539.9,83333.4,83127.2,82921.1,82715.2,82509.6,82304.1,82098.9,81893.9,81689.1,81484.6,81280.3,81076.3,80872.6,80669.1,80465.9,80263,80060.4,79858.1,79656.2,79454.5,79253.2,79052.3,78851.7,78651.5,78451.7,78252.3,78053.2,77854.6,77656.5,77458.7,77261.4,77064.6,76868.3,76672.5,76477.1,76282.3,76088.1,75894.4,75701.2,75508.6,75316.7,75125.3,74934.6,74744.5,74555.1,74366.4,74178.3,73991,73804.4,73618.6,73433.5,73249.2,73065.7,72883.1,72701.3,72520.4,72340.3,72161.2,71983,71805.8,71629.5,71454.2,71280,71106.7,70934.6,70763.5,70593.6,70424.8,70257.1,70090.6,69925.3,69761.3,69598.5,69437,69276.8,69117.9,68960.3,68804.2,68649.4,68496.1,68344.2,68193.8,68044.8,67897.4,67751.6,67607.3,67464.6,67323.6,67184.1,67046.4,66910.3,66775.9,66643.3,66512.4,66383.3,66256,66130.5,66006.9,65885.1,65765.1,65647.1,65531,65416.8,65304.5,65194.2,65085.9,64979.5,64875.2,64772.9,64672.5,64574.3,64478,64383.8,64291.7,64201.6,64113.6,64027.7,63943.8,63862,63782.3,63704.6,63629.1,63555.6,63484.2,63414.8,63347.5,63282.3,63219.1,63157.9,63098.7,63041.6,62986.4,62933.3,62882.1,62832.8,62785.5,62740.1,62696.6,62655,62615.2,62577.2,62541.1,62506.7,62474.1,62443.2,62414,62386.5,62360.6,62336.4,62313.7,62292.6,62273,62254.8,62238.2,62222.9,62209,62196.5,62185.3,62175.3,62166.6,62159.1,62152.7,62147.5,62143.3,62140.2,62138.1,62137,62136.8,62137.5,62139,62141.3,62144.4,62148.3,62152.8,62157.9,62163.7,62170,62176.8,62184.2,62191.9,62200.1,62208.6,62217.5,62226.7,62236,62245.6,62255.4,62265.3,62275.3,62285.3,62295.3,62305.4,62315.3,62325.2,62334.9,62344.5,62353.8,62362.9,62371.8,62380.3,62388.5,62396.2,62403.6,62410.6,62417,62423,62428.4,62433.2,62437.5,62441.1,62444,62446.3,62447.8,62448.6,62448.6,62447.8,62446.1,62443.7,62440.3,62436,62430.8,62424.7,62417.5,62409.4,62400.2,62390,62378.8,62366.4,62352.9,62338.3,62322.6,62305.7,62287.6,62268.3,62247.7,62226,62203,62178.7,62153.1,62126.3,62098.1,62068.6,62037.8,62005.6,61972.1,61937.2,61900.9,61863.2,61824.1,61783.6,61741.7,61698.4,61653.6,61607.4,61559.8,61510.7,61460.1,61408.1,61354.6,61299.7,61243.3,61185.4,61126.1,61065.3,61003,60939.3,60874.1,60807.4,60739.3,60669.7,60598.7,60526.2,60452.3,60377,60300.2,60222,60142.4,60061.3,59978.9,59895.1,59809.9,59723.4,59635.5,59546.3,59455.7,59363.9,59270.7,59176.3,59080.6,58983.7,58885.5,58786.2,58685.6,58583.9,58481,58377,58271.9,58165.7,58058.5,57950.2,57840.9,57730.6,57619.3,57507.1,57394,57280.1,57165.3,57049.6,56933.2,56815.9,56698,56579.4,56460,56340.1,56219.5,56098.3,55976.7,55854.4,55731.8,55608.6,55485.1,55361.2,55236.9,55112.3,54987.5,54862.4,54737.1,54611.7,54486.1,54360.4,54234.6,54108.8,53983,53857.3,53731.6,53606,53480.5,53355.2,53230.1,53105.2,52980.6,52856.2,52732.2,52608.5,52485.1,52362.2,52239.7,52117.6,51995.9,51874.8,51754.2,51634.1,51514.5,51395.5,51277.1,51159.3,51042.1,50925.5,50809.5,50694.2,50579.5,50465.5,50352.1,50239.4,50127.4,50016,49905.3,49795.3,49685.9,49577.2,49469.1,49361.7,49254.9,49148.8,49043.2,48938.3,48833.9,48730.2,48627,48524.3,48422.1,48320.5,48219.3,48118.6,48018.3,47918.5,47819,47719.9,47621.2,47522.7,47424.5,47326.6,47228.9,47131.5,47034.2,46937,46839.9,46742.9,46646,46549.1,46452.1,46355.1,46258.1,46160.9,46063.6,45966.1,45868.3,45770.4,45672.2,45573.7,45474.8,45375.6,45276,45176,45075.5,44974.5,44873.1,44771,44668.5,44565.3,44461.5,44357,44251.9,44146,44039.5,43932.2,43824.1,43715.2,43605.5,43494.9,43383.5,43271.3,43158.1,43044,42928.9,42812.9,42696,42578,42459.1,42339.1,42218.1,42096,41972.9,41848.8,41723.5,41597.2,41469.8,41341.2,41211.6,41080.9,40949,40816,40681.8,40546.5,40410.1,40272.5,40133.8,39993.9,39852.8,39710.6,39567.3,39422.8,39277.2,39130.3,38982.4,38833.3,38683,38531.7,38379.1,38225.5,38070.7,37914.8,37757.7,37599.6,37440.3,37280,37118.5,36956,36792.4,36627.7,36461.9,36295.1,36127.2,35958.3,35788.3,35617.3,35445.3,35272.3,35098.3,34923.2,34747.2,34570.3,34392.3,34213.4,34033.5,33852.7,33671,33488.3,33304.8,33120.3,32934.9,32748.6,32561.5,32373.5,32184.6,31994.9,31804.3,31612.9,31420.7,31227.7,31033.8,30839.2,30643.8,30447.6,30250.7,30053,29854.5,29655.4,29455.5,29254.9,29053.5,28851.6,28648.9,28445.6,28241.6,28036.9,27831.7,27625.8,27419.4,27212.4,27004.7,26796.6,26587.9,26378.7,26169,25958.8,25748.1,25537,25325.4,25113.5,24901.1,24688.4,24475.4,24262,24090],"g":[0.000573042,0.000589565,0.000606571,0.000624074,0.00064209,0.000660632,0.000679718,0.000699362,0.000719581,0.000740393,0.000761815,0.000783865,0.000806562,0.000829924,0.000853972,0.000878726,0.000904206,0.000930435,0.000957434,0.000985227,0.00101384,0.00104329,0.00107361,0.00110481,0.00113694,0.00117002,0.00120406,0.00123911,0.00127519,0.00131234,0.00135058,0.00138995,0.00143048,0.0014722,0.00151516,0.00155938,0.00160491,0.00165178,0.00170004,0.00174972,0.00180087,0.00185354,0.00190776,0.00196358,0.00202105,0.00208023,0.00214115,0.00220388,0.00226846,0.00233496,0.00240343,0.00247392,0.0025465,0.00262123,0.00269818,0.00277741,0.00285899,0.00294298,0.00302947,0.00311853,0.00321022,0.00330464,0.00340185,0.00350196,0.00360503,0.00371117,0.00382046,0.00393299,0.00404887,0.00416819,0.00429105,0.00441757,0.00454784,0.00468199,0.00482013,0.00496237,0.00510884,0.00525967,0.00541498,0.00557491,0.00573959,0.00590918,0.00608381,0.00626363,0.00644881,0.00663949,0.00683585,0.00703805,0.00724626,0.00746067,0.00768146,0.00790882,0.00814295,0.00838404,0.0086323,0.00888795,0.00915121,0.0094223,0.00970146,0.00998891,0.0102849,0.0105897,0.0109036,0.0112268,0.0115596,0.0119024,0.0122553,0.0126187,0.0129929,0.0133782,0.0137749,0.0141835,0.0146042,0.0150373,0.0154833,0.0159426,0.0164155,0.0169024,0.0174038,0.01792,0.0184515,0.0189987,0.0195622,0.0201424,0.0207397,0.0213547,0.0219878,0.0226397,0.0233109,0.0240018,0.0247132,0.0254455,0.0261995,0.0269756,0.0277746,0.0285972,0.0294439,0.0303155,0.0312127,0.0321363,0.0330869,0.0340654,0.0350726,0.0361093,0.0371762,0.0382744,0.0394046,0.0405677,0.0417648,0.0429966,0.0442643,0.0455688,0.0469112,0.0482924,0.0497136,0.0511759,0.0526804,0.0542283,0.0558208,0.057459,0.0591443,0.0608778,0.062661,0.0644951,0.0663816,0.0683217,0.070317,0.0723689,0.0744789,0.0766486,0.0788794,0.081173,0.083531,0.0859551,0.0884469,0.0910082,0.0936407,0.0963463,0.0991267,0.101984,0.10492,0.107936,0.111035,0.114218,0.117488,0.120846,0.124295,0.127837,0.131473,0.135207,0.13904,0.142975,0.147013,0.151157,0.155409,0.159773,0.164249,0.16884,0.173549,0.178378,0.18333,0.188406,0.19361,0.198943,0.204408,0.210007,0.215743,0.221619,0.227636,0.233796,0.240103,0.246558,0.253164,0.259922,0.266836,0.273906,0.281136,0.288526,0.29608,0.303798,0.311683,0.319735,0.327958,0.336352,0.344918,0.353657,0.362572,0.371662,0.380928,0.390371,0.399992,0.40979,0.419767,0.42992,0.440252,0.45076,0.461444,0.472303,0.483336,0.494541,0.505916,0.517461,0.529171,0.541045,0.55308,0.565272,0.577618,0.590115,0.602757,0.615541,0.628462,0.641515,0.654693,0.667992,0.681404,0.694924,0.708545,0.722259,0.736059,0.749936,0.763883,0.777891,0.791952,0.806055,0.820191,0.834351,0.848524,0.8627,0.876869,0.891019,0.905139,0.919218,0.933246,0.947209,0.961097,0.974897,0.988597,1.00219,1.01565,1.02898,1.04216,1.05519,1.06804,1.08071,1.09318,1.10545,1.1175,1.12932,1.1409,1.15224,1.16331,1.17411,1.18463,1.19487,1.20481,1.21444,1.22376,1.23276,1.24143,1.24978,1.25778,1.26543,1.27274,1.2797,1.2863,1.29254,1.29842,1.30394,1.30909,1.31388,1.3183,1.32236,1.32605,1.32939,1.33237,1.33499,1.33725,1.33917,1.34074,1.34198,1.34288,1.34345,1.34369,1.34362,1.34324,1.34256,1.34158,1.34032,1.33877,1.33696,1.33488,1.33255,1.32997,1.32716,1.32411,1.32086,1.31739,1.31372,1.30987,1.30583,1.30162,1.29726,1.29274,1.28807,1.28328,1.27836,1.27333,1.26819,1.26295,1.25763,1.25223,1.24675,1.24122,1.23563,1.23,1.22433,1.21862,1.2129,1.20716,1.20141,1.19567,1.18993,1.1842,1.17849,1.1728,1.16715,1.16154,1.15597,1.15044,1.14497,1.13956,1.13422,1.12894,1.12374,1.11861,1.11357,1.10861,1.10375,1.09897,1.0943,1.08973,1.08526,1.0809,1.07666,1.07252,1.06851,1.06461,1.06084,1.0572,1.05368,1.0503,1.04704,1.04393,1.04095,1.03811,1.03541,1.03286,1.03045,1.02819,1.02608,1.02413,1.02233,1.02068,1.01919,1.01786,1.01668,1.01568,1.01483,1.01415,1.01364,1.0133,1.01312,1.01312,1.01329,1.01364,1.01417,1.01487,1.01575,1.01682,1.01807,1.0195,1.02112,1.02293,1.02493,1.02712,1.02951,1.03209,1.03487,1.03785,1.04103,1.04441,1.04799,1.05179,1.05579,1.06,1.06443,1.06907,1.07393,1.079,1.0843,1.08982,1.09556,1.10153,1.10773,1.11416,1.12083,1.12773,1.13486,1.14224,1.14985,1.15771,1.16581,1.17416,1.18276,1.19161,1.20071,1.21006,1.21967,1.22953,1.23965,1.25003,1.26068,1.27158,1.28274,1.29417,1.30586,1.31781,1.33003,1.34251,1.35526,1.36827,1.38154,1.39507,1.40887,1.42292,1.43723,1.4518,1.46662,1.48169,1.49701,1.51257,1.52838,1.54442,1.56069,1.57719,1.59392,1.61086,1.62801,1.64536,1.66291,1.68065,1.69858,1.71667,1.73493,1.75334,1.7719,1.79059,1.80941,1.82834,1.84736,1.86648,1.88567,1.90492,1.92422,1.94355,1.9629,1.98226,2.0016,2.02092,2.0402,2.05942,2.07856,2.09761,2.11655,2.13537,2.15404,2.17255,2.19089,2.20903,2.22696,2.24466,2.26211,2.27931,2.29622,2.31284,2.32915,2.34513,2.36077,2.37606,2.39098,2.40551,2.41965,2.43338,2.44669,2.45958,2.47202,2.48401,2.49555,2.50662,2.51722,2.52735,2.53699,2.54615,2.55482,2.56299,2.57068,2.57787,2.58457,2.59077,2.59649,2.60173,2.60648,2.61075,2.61456,2.61789,2.62077,2.6232,2.62519,2.62674,2.62787,2.62858,2.62889,2.62881,2.62834,2.62751,2.62631,2.62477,2.6229,2.62071,2.61821,2.61542,2.61235,2.60901,2.60541,2.60157,2.59751,2.59323,2.58874,2.58407,2.57922,2.57421,2.56905,2.56374,2.55831,2.55276,2.5471,2.54135,2.53552,2.52961,2.52363,2.51761,2.51153,2.50542,2.49927,2.49311,2.48693,2.48075,2.47456,2.46838,2.46221,2.45606,2.44993,2.44383,2.43776,2.43172,2.42571,2.41975,2.41383,2.40796,2.40213,2.39635,2.39062,2.38493,2.3793,2.37372,2.36818,2.36269,2.35725,2.35186,2.34651,2.3412,2.33593,2.33069,2.32549,2.32032,2.31518,2.31006,2.30495,2.29987,2.29479,2.28972,2.28465,2.27957,2.27449,2.26939,2.26427,2.25912,2.25394,2.24873,2.24347,2.23816,2.2328,2.22738,2.22189,2.21632,2.21068,2.20495,2.19913,2.19321,2.18719,2.18106,2.17481,2.16845,2.16195,2.15533,2.14857,2.14167,2.13462,2.12742,2.12007,2.11256,2.10489,2.09705,2.08904,2.08087,2.07251,2.06398,2.05528,2.04639,2.03732,2.02808,2.01865,2.00903,1.99924,1.98927,1.97912,1.96879,1.95829,1.94762,1.93677,1.92577,1.9146,1.90327,1.89179,1.88016,1.86839,1.85649,1.84445,1.83229,1.82002,1.80764,1.79516,1.78258,1.76992,1.75719,1.74439,1.73154,1.71864,1.7057,1.69273,1.67975,1.66677,1.65378,1.64082,1.62788,1.61498,1.60213,1.58934,1.57663,1.56399,1.55145,1.53902,1.52671,1.51452,1.50247,1.49057,1.47883,1.46727,1.45588,1.44468,1.43582]},"res":{"peakQ":436649.34883368417,"tPeakQ":299,"load":129031232.55444078,"peakTs":1720.6099809041523,"tPeakTs":301,"peakTb":429.8770474725966,"tPeakTb":3463.5,"tHeat":719.8048566913269,"tEnd":4319.804856691327,"hist":{"t":[0,5,10,15,20,25,30,35,40,45,50,55,60,65,70,75,80,85,90,95,100,105,110,115,120,125,130,135,140,145,150,155,160,165,170,175,180,185,190,195,200,205,210,215,220,225,230,235,240,245,250,255,260,265,270,275,280,285,290,295,300,305,310,315,320,325,330,335,340,345,350,355,360,365,370,375,380,385,390,395,400,405,410,415,420,425,430,435,440,445,450,455,460,465,470,475,480,485,490,495,500,505,510,515,520,525,530,535,540,545,550,555,560,565,570,575,580,585,590,595,600,605,610,615,620,625,630,635,640,645,650,655,660,665,670,675,680,685,690,695,700,705,710,715,720,725,730,735,740,745,750,755,760,765,770,775,780,785,790,795,800,805,810,815,820,825,830,835,840,845,850,855,860,865,870,875,880,885,890,895,900,905,910,915,920,925,930,935,940,945,950,955,960,965,970,975,980,985,990,995,1000,1005,1010,1015,1020,1025,1030,1035,1040,1045,1050,1055,1060,1065,1070,1075,1080,1085,1090,1095,1100,1105,1110,1115,1120,1125,1130,1135,1140,1145,1150,1155,1160,1165,1170,1175,1180,1185,1190,1195,1200,1205,1210,1215,1220,1225,1230,1235,1240,1245,1250,1255,1260,1265,1270,1275,1280,1285,1290,1295,1300,1305,1310,1315,1320,1325,1330,1335,1340,1345,1350,1355,1360,1365,1370,1375,1380,1385,1390,1395,1400,1405,1410,1415,1420,1425,1430,1435,1440,1445,1450,1455,1460,1465,1470,1475,1480,1485,1490,1495,1500,1505,1510,1515,1520,1525,1530,1535,1540,1545,1550,1555,1560,1565,1570,1575,1580,1585,1590,1595,1600,1605,1610,1615,1620,1625,1630,1635,1640,1645,1650,1655,1660,1665,1670,1675,1680,1685,1690,1695,1700,1705,1710,1715,1720,1725,1730,1735,1740,1745,1750,1755,1760,1765,1770,1775,1780,1785,1790,1795,1800,1805,1810,1815,1820,1825,1830,1835,1840,1845,1850,1855,1860,1865,1870,1875,1880,1885,1890,1895,1900,1905,1910,1915,1920,1925,1930,1935,1940,1945,1950,1955,1960,1965,1970,1975,1980,1985,1990,1995,2000,2005,2010,2015,2020,2025,2030,2035,2040,2045,2050,2055,2060,2065,2070,2075,2080,2085,2090,2095,2100,2105,2110,2115,2120,2125,2130,2135,2140,2145,2150,2155,2160,2165,2170,2175,2180,2185,2190,2195,2200,2205,2210,2215,2220,2225,2230,2235,2240,2245,2250,2255,2260,2265,2270,2275,2280,2285,2290,2295,2300,2305,2310,2315,2320,2325,2330,2335,2340,2345,2350,2355,2360,2365,2370,2375,2380,2385,2390,2395,2400,2405,2410,2415,2420,2425,2430,2435,2440,2445,2450,2455,2460,2465,2470,2475,2480,2485,2490,2495,2500,2505,2510,2515,2520,2525,2530,2535,2540,2545,2550,2555,2560,2565,2570,2575,2580,2585,2590,2595,2600,2605,2610,2615,2620,2625,2630,2635,2640,2645,2650,2655,2660,2665,2670,2675,2680,2685,2690,2695,2700,2705,2710,2715,2720,2725,2730,2735,2740,2745,2750,2755,2760,2765,2770,2775,2780,2785,2790,2795,2800,2805,2810,2815,2820,2825,2830,2835,2840,2845,2850,2855,2860,2865,2870,2875,2880,2885,2890,2895,2900,2905,2910,2915,2920,2925,2930,2935,2940,2945,2950,2955,2960,2965,2970,2975,2980,2985,2990,2995,3000,3005,3010,3015,3020,3025,3030,3035,3040,3045,3050,3055,3060,3065,3070,3075,3080,3085,3090,3095,3100,3105,3110,3115,3120,3125,3130,3135,3140,3145,3150,3155,3160,3165,3170,3175,3180,3185,3190,3195,3200,3205,3210,3215,3220,3225,3230,3235,3240,3245,3250,3255,3260,3265,3270,3275,3280,3285,3290,3295,3300,3305,3310,3315,3320,3325,3330,3335,3340,3345,3350,3355,3360,3365,3370,3375,3380,3385,3390,3395,3400,3405,3410,3415,3420,3425,3430,3435,3440,3445,3450,3455,3460,3465,3470,3475,3480,3485,3490,3495,3500,3505,3510,3515,3520,3525,3530,3535,3540,3545,3550,3555,3560,3565,3570,3575,3580,3585,3590,3595,3600,3605,3610,3615,3620,3625,3630,3635,3640,3645,3650,3655,3660,3665,3670,3675,3680,3685,3690,3695,3700,3705,3710,3715,3720,3725,3730,3735,3740,3745,3750,3755,3760,3765,3770,3775,3780,3785,3790,3795,3800,3805,3810,3815,3820,3825,3830,3835,3840,3845,3850,3855,3860,3865,3870,3875,3880,3885,3890,3895,3900,3905,3910,3915,3920,3925,3930,3935,3940,3945,3950,3955,3960,3965,3970,3975,3980,3985,3990,3995,4000,4005,4010,4015,4020,4025,4030,4035,4040,4045,4050,4055,4060,4065,4070,4075,4080,4085,4090,4095,4100,4105,4110,4115,4120,4125,4130,4135,4140,4145,4150,4155,4160,4165,4170,4175,4180,4185,4190,4195,4200,4205,4210,4215,4220,4225,4230,4235,4240,4245,4250,4255,4260,4265,4270,4275,4280,4285,4290,4295,4300,4305,4310,4315,4319.8],"Ts":[315.674,533.334,587.503,621.653,648.127,670.834,691.434,710.781,729.39,747.563,765.499,783.331,801.155,819.039,837.038,855.192,873.534,892.088,910.876,929.913,949.216,968.776,988.601,1008.71,1029.12,1049.83,1070.86,1092.19,1113.82,1135.75,1157.98,1180.52,1203.34,1226.43,1249.78,1273.36,1297.14,1321.1,1345.2,1369.39,1393.62,1417.83,1441.93,1465.86,1489.51,1512.78,1535.54,1557.66,1578.99,1599.38,1618.69,1636.75,1653.39,1668.46,1681.81,1693.32,1702.87,1710.41,1715.87,1719.25,1720.58,1719.94,1717.42,1713.15,1707.3,1700.05,1691.58,1682.1,1671.82,1660.91,1649.58,1638,1626.34,1614.74,1603.34,1592.25,1581.58,1571.41,1561.82,1552.88,1544.62,1537.09,1530.31,1524.3,1519.07,1514.59,1510.86,1507.85,1505.5,1503.78,1502.6,1501.88,1501.53,1501.43,1501.44,1501.43,1501.22,1500.63,1499.49,1497.59,1494.75,1490.75,1485.44,1478.65,1470.25,1460.15,1448.3,1434.69,1419.37,1402.43,1383.98,1364.19,1343.23,1321.28,1298.52,1275.14,1251.29,1227.12,1202.76,1178.3,1153.8,1129.33,1104.9,1080.54,1056.26,1032.05,1007.9,983.805,959.762,935.794,911.957,888.278,864.818,841.657,818.896,796.651,775.044,754.231,734.324,715.436,697.661,681.071,665.707,651.609,628.224,603.926,592.658,584.224,577.206,571.081,565.588,560.572,555.936,551.612,547.55,543.713,540.074,536.607,533.295,530.122,527.076,524.146,521.32,518.593,515.955,513.401,510.925,508.523,506.189,503.918,501.709,499.557,497.46,495.413,493.417,491.466,489.56,487.696,485.873,484.089,482.341,480.63,478.953,477.308,475.695,474.112,472.559,471.034,469.536,468.065,466.619,465.198,463.8,462.426,461.074,459.743,458.434,457.144,455.875,454.625,453.393,452.179,450.984,449.805,448.643,447.497,446.367,445.253,444.153,443.068,441.997,440.941,439.898,438.868,437.851,436.847,435.856,434.876,433.909,432.953,432.008,431.074,430.151,429.239,428.337,427.445,426.564,425.692,424.829,423.976,423.133,422.298,421.472,420.654,419.846,419.045,418.253,417.468,416.692,415.923,415.162,414.408,413.662,412.923,412.191,411.466,410.747,410.036,409.331,408.632,407.94,407.254,406.574,405.9,405.232,404.57,403.914,403.264,402.619,401.979,401.345,400.716,400.092,399.474,398.86,398.252,397.648,397.05,396.456,395.866,395.282,394.702,394.126,393.555,392.988,392.426,391.868,391.315,390.765,390.22,389.679,389.141,388.608,388.079,387.554,387.032,386.514,385.999,385.489,384.982,384.478,383.978,383.481,382.988,382.498,382.012,381.529,381.049,380.572,380.098,379.627,379.16,378.696,378.235,377.776,377.321,376.868,376.418,375.971,375.527,375.086,374.647,374.211,373.778,373.347,372.919,372.494,372.071,371.651,371.233,370.817,370.404,369.994,369.586,369.18,368.777,368.375,367.976,367.58,367.185,366.793,366.404,366.016,365.63,365.247,364.865,364.486,364.109,363.734,363.361,362.99,362.62,362.253,361.888,361.524,361.163,360.804,360.446,360.09,359.736,359.384,359.034,358.685,358.339,357.994,357.65,357.309,356.969,356.631,356.294,355.96,355.626,355.295,354.965,354.637,354.31,353.985,353.661,353.339,353.019,352.7,352.383,352.067,351.752,351.439,351.128,350.818,350.509,350.202,349.896,349.592,349.289,348.987,348.687,348.388,348.091,347.795,347.5,347.207,346.914,346.623,346.334,346.045,345.758,345.473,345.188,344.905,344.623,344.342,344.062,343.784,343.507,343.231,342.956,342.682,342.41,342.138,341.868,341.599,341.331,341.064,340.798,340.534,340.27,340.008,339.747,339.486,339.227,338.969,338.712,338.456,338.201,337.947,337.694,337.442,337.192,336.942,336.693,336.445,336.198,335.952,335.707,335.463,335.221,334.979,334.738,334.498,334.258,334.02,333.783,333.547,333.311,333.077,332.843,332.611,332.379,332.148,331.918,331.689,331.461,331.234,331.007,330.782,330.557,330.333,330.11,329.888,329.667,329.447,329.227,329.008,328.79,328.573,328.357,328.142,327.927,327.713,327.5,327.288,327.077,326.866,326.656,326.447,326.239,326.032,325.825,325.619,325.414,325.21,325.006,324.803,324.601,324.4,324.199,323.999,323.8,323.602,323.404,323.207,323.011,322.816,322.621,322.427,322.234,322.041,321.849,321.658,321.468,321.278,321.089,320.9,320.713,320.526,320.339,320.154,319.969,319.785,319.601,319.418,319.236,319.054,318.873,318.693,318.513,318.334,318.156,317.978,317.801,317.625,317.449,317.274,317.1,316.926,316.753,316.58,316.408,316.237,316.066,315.896,315.727,315.558,315.389,315.222,315.055,314.888,314.722,314.557,314.392,314.228,314.065,313.902,313.74,313.578,313.417,313.256,313.096,312.937,312.778,312.62,312.462,312.305,312.148,311.992,311.837,311.682,311.528,311.374,311.221,311.068,310.916,310.764,310.613,310.463,310.313,310.163,310.014,309.866,309.718,309.571,309.424,309.278,309.132,308.987,308.842,308.698,308.554,308.411,308.268,308.126,307.984,307.843,307.703,307.563,307.423,307.284,307.145,307.007,306.869,306.732,306.595,306.459,306.323,306.188,306.053,305.919,305.785,305.652,305.519,305.387,305.255,305.123,304.992,304.862,304.732,304.602,304.473,304.344,304.216,304.088,303.961,303.834,303.707,303.581,303.456,303.331,303.206,303.082,302.958,302.835,302.712,302.589,302.467,302.346,302.225,302.104,301.984,301.864,301.744,301.625,301.506,301.388,301.27,301.153,301.036,300.919,300.803,300.687,300.572,300.457,300.343,300.229,300.115,300.001,299.889,299.776,299.664,299.552,299.441,299.33,299.219,299.109,298.999,298.89,298.781,298.672,298.564,298.456,298.348,298.241,298.135,298.028,297.922,297.816,297.711,297.606,297.502,297.398,297.294,297.19,297.087,296.984,296.882,296.78,296.678,296.577,296.476,296.376,296.275,296.175,296.076,295.977,295.878,295.779,295.681,295.583,295.486,295.389,295.292,295.195,295.099,295.003,294.908,294.813,294.718,294.623,294.529,294.435,294.342,294.249,294.156,294.063,293.971,293.879,293.788,293.696,293.605,293.515,293.424,293.334,293.245,293.155,293.066,292.978,292.889,292.801,292.713,292.625,292.538,292.451,292.365,292.278,292.192,292.106,292.021,291.936,291.851,291.766,291.682,291.598,291.514,291.431,291.348,291.265,291.182,291.1,291.018,290.936,290.855,290.773,290.692,290.612,290.531,290.451,290.372,290.292,290.213,290.134,290.055,289.977,289.898,289.82,289.743,289.665,289.588,289.511,289.435,289.358,289.282,289.206,289.131,289.055,288.98,288.906,288.831,288.757,288.683,288.609,288.535,288.462,288.389,288.316,288.243,288.171,288.099,288.027,287.955,287.884,287.813,287.742,287.671,287.601,287.531,287.461,287.391,287.322,287.252,287.183,287.115,287.046,286.978,286.909,286.842,286.774,286.706,286.639,286.572,286.506,286.439,286.373,286.307,286.241,286.175,286.11,286.044,285.979,285.914,285.85,285.785,285.721,285.657,285.594,285.53,285.467,285.404,285.341,285.278,285.215,285.153,285.091,285.029,284.967,284.906,284.845,284.783,284.723,284.662,284.601,284.541,284.481,284.421,284.361,284.302,284.242,284.183,284.124,284.066,284.007,283.949,283.89,283.832,283.775,283.717,283.659,283.602,283.545,283.488,283.431,283.375,283.319,283.262,283.206,283.151,283.095,283.039,282.984,282.929,282.874,282.819,282.765,282.71,282.656,282.602,282.548,282.494,282.443],"Tb":[295,295,295,295,295,295,295,295,295,295,295,295,295,295,295,295,295,295,295,295,295,295,295,295,295,295,295,295,295,295,295,295,295,295,295,295,295,295,295,295,295,295,295,295,295,295,295,295,295.001,295.001,295.001,295.001,295.001,295.001,295.002,295.002,295.003,295.003,295.004,295.004,295.005,295.006,295.007,295.008,295.009,295.011,295.012,295.014,295.016,295.018,295.02,295.023,295.026,295.029,295.033,295.037,295.041,295.046,295.051,295.057,295.063,295.07,295.078,295.086,295.094,295.104,295.114,295.126,295.138,295.151,295.165,295.18,295.196,295.214,295.233,295.253,295.275,295.298,295.323,295.35,295.378,295.409,295.441,295.476,295.513,295.552,295.594,295.638,295.685,295.734,295.787,295.842,295.9,295.962,296.027,296.096,296.168,296.243,296.323,296.406,296.494,296.585,296.68,296.78,296.885,296.993,297.107,297.225,297.348,297.475,297.608,297.746,297.889,298.037,298.19,298.349,298.513,298.682,298.858,299.039,299.225,299.417,299.615,299.819,300.029,300.245,300.467,300.694,300.928,301.168,301.414,301.666,301.925,302.189,302.46,302.736,303.019,303.309,303.604,303.905,304.213,304.526,304.846,305.172,305.504,305.841,306.185,306.534,306.89,307.251,307.618,307.99,308.368,308.752,309.141,309.536,309.935,310.34,310.75,311.166,311.586,312.011,312.44,312.875,313.313,313.757,314.204,314.656,315.112,315.573,316.037,316.505,316.976,317.451,317.93,318.412,318.898,319.387,319.879,320.373,320.871,321.371,321.874,322.38,322.888,323.398,323.91,324.425,324.941,325.46,325.98,326.502,327.025,327.55,328.076,328.604,329.132,329.662,330.193,330.724,331.257,331.79,332.324,332.858,333.393,333.928,334.463,334.999,335.535,336.07,336.606,337.142,337.677,338.213,338.748,339.283,339.817,340.351,340.884,341.417,341.949,342.48,343.011,343.541,344.07,344.598,345.125,345.651,346.176,346.7,347.223,347.745,348.266,348.785,349.303,349.82,350.335,350.849,351.361,351.872,352.381,352.889,353.395,353.9,354.403,354.904,355.404,355.902,356.398,356.892,357.385,357.876,358.365,358.852,359.337,359.82,360.302,360.781,361.259,361.735,362.208,362.68,363.149,363.617,364.083,364.546,365.008,365.467,365.925,366.38,366.833,367.284,367.733,368.18,368.625,369.068,369.508,369.947,370.383,370.817,371.249,371.679,372.106,372.532,372.955,373.377,373.796,374.213,374.627,375.04,375.45,375.859,376.265,376.669,377.071,377.47,377.868,378.263,378.656,379.047,379.436,379.823,380.207,380.59,380.97,381.349,381.725,382.099,382.47,382.84,383.208,383.574,383.937,384.299,384.658,385.016,385.371,385.724,386.076,386.425,386.772,387.117,387.46,387.801,388.14,388.477,388.813,389.146,389.477,389.806,390.133,390.458,390.781,391.102,391.421,391.739,392.054,392.367,392.679,392.988,393.296,393.602,393.905,394.207,394.507,394.806,395.102,395.396,395.689,395.98,396.268,396.556,396.841,397.124,397.406,397.686,397.964,398.24,398.514,398.787,399.058,399.327,399.594,399.86,400.124,400.386,400.647,400.905,401.162,401.418,401.672,401.924,402.174,402.423,402.67,402.915,403.159,403.401,403.642,403.88,404.118,404.353,404.588,404.82,405.051,405.28,405.508,405.735,405.959,406.182,406.404,406.624,406.843,407.06,407.276,407.49,407.703,407.914,408.123,408.332,408.539,408.744,408.948,409.15,409.351,409.551,409.749,409.946,410.142,410.336,410.528,410.72,410.91,411.098,411.285,411.471,411.656,411.839,412.021,412.202,412.381,412.559,412.736,412.911,413.085,413.258,413.429,413.6,413.769,413.937,414.103,414.268,414.432,414.595,414.757,414.917,415.077,415.235,415.391,415.547,415.702,415.855,416.007,416.158,416.308,416.457,416.604,416.75,416.896,417.04,417.183,417.325,417.466,417.605,417.744,417.882,418.018,418.153,418.288,418.421,418.553,418.684,418.814,418.944,419.072,419.199,419.325,419.45,419.573,419.696,419.818,419.939,420.059,420.178,420.296,420.413,420.529,420.644,420.759,420.872,420.984,421.095,421.206,421.315,421.423,421.531,421.638,421.743,421.848,421.952,422.055,422.157,422.259,422.359,422.458,422.557,422.655,422.752,422.848,422.943,423.037,423.131,423.223,423.315,423.406,423.496,423.586,423.674,423.762,423.849,423.935,424.02,424.105,424.188,424.271,424.354,424.435,424.516,424.595,424.674,424.753,424.83,424.907,424.983,425.059,425.133,425.207,425.28,425.352,425.424,425.495,425.565,425.635,425.704,425.772,425.839,425.906,425.972,426.037,426.102,426.166,426.229,426.292,426.354,426.415,426.476,426.536,426.595,426.654,426.712,426.769,426.826,426.882,426.937,426.992,427.046,427.1,427.153,427.205,427.257,427.308,427.359,427.408,427.458,427.507,427.555,427.602,427.649,427.696,427.741,427.787,427.831,427.875,427.919,427.962,428.004,428.046,428.087,428.128,428.168,428.208,428.247,428.285,428.323,428.361,428.398,428.434,428.47,428.506,428.54,428.575,428.609,428.642,428.675,428.707,428.739,428.77,428.801,428.831,428.861,428.89,428.919,428.948,428.975,429.003,429.03,429.056,429.082,429.108,429.133,429.157,429.182,429.205,429.228,429.251,429.274,429.295,429.317,429.338,429.358,429.378,429.398,429.417,429.436,429.455,429.473,429.49,429.507,429.524,429.54,429.556,429.572,429.587,429.601,429.615,429.629,429.643,429.656,429.668,429.681,429.692,429.704,429.715,429.726,429.736,429.746,429.755,429.765,429.773,429.782,429.79,429.798,429.805,429.812,429.818,429.825,429.83,429.836,429.841,429.846,429.85,429.854,429.858,429.862,429.865,429.867,429.87,429.872,429.873,429.875,429.876,429.877,429.877,429.877,429.877,429.876,429.875,429.874,429.872,429.871,429.868,429.866,429.863,429.86,429.857,429.853,429.849,429.844,429.84,429.835,429.83,429.824,429.818,429.812,429.806,429.799,429.792,429.785,429.777,429.769,429.761,429.753,429.744,429.735,429.726,429.716,429.706,429.696,429.686,429.675,429.665,429.653,429.642,429.63,429.618,429.606,429.594,429.581,429.568,429.555,429.541,429.528,429.514,429.499,429.485,429.47,429.455,429.44,429.425,429.409,429.393,429.377,429.361,429.344,429.327,429.31,429.293,429.275,429.257,429.239,429.221,429.202,429.184,429.165,429.146,429.126,429.107,429.087,429.067,429.047,429.026,429.006,428.985,428.964,428.942,428.921,428.899,428.877,428.855,428.833,428.81,428.788,428.765,428.741,428.718,428.695,428.671,428.647,428.623,428.598,428.574,428.549,428.524,428.499,428.474,428.449,428.423,428.397,428.371,428.345,428.319,428.292,428.265,428.238,428.211,428.184,428.157,428.129,428.101,428.073,428.045,428.017,427.988,427.96,427.931,427.902,427.873,427.843,427.814,427.784,427.754,427.724,427.694,427.664,427.634,427.603,427.572,427.541,427.51,427.479,427.448,427.416,427.384,427.352,427.32,427.288,427.256,427.224,427.191,427.158,427.125,427.092,427.059,427.026,426.992,426.959,426.925,426.891,426.857,426.823,426.789,426.754,426.719,426.685,426.65,426.615,426.58,426.545,426.509,426.474,426.438,426.402,426.366,426.33,426.296],"Tback":[295,295,295,295,295,295,295,295,295,295,295,295,295,295,295,295,295,295,295,295,295,295,295,295,295,295,295,295,295,295,295,295,295,295,295,295,295,295,295,295,295,295,295,295,295,295,295,295,295,295.001,295.001,295.001,295.001,295.001,295.002,295.002,295.002,295.003,295.003,295.004,295.004,295.005,295.006,295.007,295.008,295.009,295.011,295.012,295.014,295.016,295.018,295.021,295.023,295.026,295.03,295.033,295.037,295.042,295.047,295.052,295.058,295.064,295.071,295.078,295.086,295.095,295.105,295.115,295.126,295.139,295.152,295.166,295.181,295.198,295.215,295.234,295.255,295.277,295.3,295.325,295.352,295.381,295.411,295.444,295.479,295.516,295.555,295.597,295.641,295.688,295.738,295.791,295.846,295.905,295.967,296.032,296.101,296.173,296.249,296.329,296.412,296.5,296.592,296.688,296.788,296.892,297.001,297.115,297.233,297.356,297.485,297.617,297.756,297.899,298.047,298.201,298.36,298.524,298.694,298.87,299.051,299.238,299.43,299.629,299.833,300.043,300.259,300.481,300.709,300.944,301.184,301.43,301.683,301.941,302.206,302.477,302.754,303.037,303.327,303.622,303.924,304.232,304.546,304.866,305.192,305.524,305.862,306.206,306.556,306.911,307.272,307.64,308.012,308.391,308.774,309.164,309.558,309.958,310.363,310.774,311.189,311.609,312.034,312.464,312.898,313.337,313.781,314.229,314.681,315.137,315.597,316.061,316.529,317.001,317.476,317.955,318.437,318.922,319.411,319.903,320.397,320.895,321.395,321.898,322.404,322.911,323.421,323.934,324.448,324.964,325.483,326.003,326.524,327.047,327.572,328.098,328.625,329.154,329.683,330.214,330.745,331.277,331.81,332.344,332.878,333.412,333.947,334.482,335.018,335.553,336.089,336.624,337.16,337.695,338.23,338.765,339.299,339.833,340.367,340.9,341.432,341.964,342.495,343.025,343.555,344.084,344.611,345.138,345.664,346.189,346.713,347.235,347.757,348.277,348.796,349.314,349.83,350.345,350.858,351.371,351.881,352.39,352.898,353.404,353.908,354.411,354.912,355.411,355.909,356.404,356.899,357.391,357.881,358.37,358.857,359.342,359.825,360.306,360.785,361.263,361.738,362.211,362.683,363.152,363.619,364.085,364.548,365.009,365.468,365.926,366.381,366.834,367.285,367.733,368.18,368.625,369.067,369.507,369.946,370.382,370.816,371.247,371.677,372.105,372.53,372.953,373.374,373.793,374.21,374.625,375.037,375.447,375.855,376.261,376.665,377.067,377.466,377.864,378.259,378.652,379.043,379.432,379.818,380.203,380.585,380.965,381.343,381.719,382.093,382.465,382.835,383.202,383.568,383.931,384.293,384.652,385.01,385.365,385.718,386.069,386.418,386.765,387.111,387.454,387.795,388.134,388.471,388.806,389.139,389.47,389.799,390.126,390.451,390.774,391.095,391.414,391.731,392.047,392.36,392.671,392.981,393.288,393.594,393.898,394.2,394.5,394.798,395.094,395.388,395.681,395.972,396.26,396.547,396.833,397.116,397.398,397.677,397.955,398.232,398.506,398.779,399.049,399.319,399.586,399.852,400.116,400.378,400.638,400.897,401.154,401.409,401.663,401.915,402.166,402.414,402.661,402.907,403.15,403.393,403.633,403.872,404.109,404.345,404.579,404.812,405.043,405.272,405.5,405.726,405.951,406.174,406.396,406.616,406.835,407.052,407.267,407.482,407.694,407.905,408.115,408.323,408.53,408.736,408.94,409.142,409.343,409.543,409.741,409.938,410.133,410.328,410.52,410.712,410.902,411.09,411.277,411.463,411.648,411.831,412.013,412.194,412.373,412.551,412.728,412.903,413.077,413.25,413.422,413.592,413.761,413.929,414.095,414.261,414.425,414.588,414.749,414.91,415.069,415.227,415.384,415.54,415.694,415.848,416,416.151,416.301,416.449,416.597,416.743,416.889,417.033,417.176,417.318,417.459,417.598,417.737,417.875,418.011,418.147,418.281,418.414,418.546,418.678,418.808,418.937,419.065,419.192,419.318,419.443,419.567,419.69,419.812,419.933,420.053,420.172,420.29,420.407,420.523,420.638,420.752,420.866,420.978,421.089,421.2,421.309,421.417,421.525,421.632,421.738,421.842,421.946,422.049,422.152,422.253,422.353,422.453,422.552,422.649,422.746,422.842,422.938,423.032,423.125,423.218,423.31,423.401,423.491,423.581,423.669,423.757,423.844,423.93,424.015,424.1,424.184,424.267,424.349,424.43,424.511,424.591,424.67,424.748,424.826,424.903,424.979,425.054,425.129,425.203,425.276,425.348,425.42,425.491,425.561,425.631,425.699,425.768,425.835,425.902,425.968,426.033,426.098,426.162,426.225,426.288,426.35,426.411,426.472,426.532,426.591,426.65,426.708,426.765,426.822,426.878,426.934,426.989,427.043,427.096,427.149,427.202,427.254,427.305,427.355,427.405,427.455,427.503,427.552,427.599,427.646,427.693,427.738,427.784,427.828,427.872,427.916,427.959,428.001,428.043,428.085,428.125,428.165,428.205,428.244,428.283,428.321,428.358,428.395,428.432,428.468,428.503,428.538,428.572,428.606,428.64,428.672,428.705,428.737,428.768,428.799,428.829,428.859,428.888,428.917,428.946,428.974,429.001,429.028,429.054,429.08,429.106,429.131,429.156,429.18,429.204,429.227,429.25,429.272,429.294,429.315,429.336,429.357,429.377,429.397,429.416,429.435,429.453,429.471,429.489,429.506,429.523,429.539,429.555,429.57,429.585,429.6,429.614,429.628,429.642,429.655,429.667,429.68,429.692,429.703,429.714,429.725,429.735,429.745,429.755,429.764,429.773,429.781,429.789,429.797,429.804,429.811,429.818,429.824,429.83,429.835,429.841,429.845,429.85,429.854,429.858,429.861,429.864,429.867,429.869,429.871,429.873,429.875,429.876,429.876,429.877,429.877,429.877,429.876,429.875,429.874,429.872,429.87,429.868,429.866,429.863,429.86,429.857,429.853,429.849,429.844,429.84,429.835,429.83,429.824,429.818,429.812,429.806,429.799,429.792,429.785,429.777,429.77,429.761,429.753,429.744,429.735,429.726,429.717,429.707,429.697,429.686,429.676,429.665,429.654,429.643,429.631,429.619,429.607,429.594,429.582,429.569,429.556,429.542,429.528,429.514,429.5,429.486,429.471,429.456,429.441,429.425,429.41,429.394,429.378,429.361,429.345,429.328,429.311,429.293,429.276,429.258,429.24,429.222,429.203,429.185,429.166,429.147,429.127,429.108,429.088,429.068,429.048,429.027,429.007,428.986,428.965,428.944,428.922,428.9,428.878,428.856,428.834,428.811,428.789,428.766,428.743,428.719,428.696,428.672,428.648,428.624,428.6,428.575,428.551,428.526,428.501,428.475,428.45,428.424,428.399,428.373,428.346,428.32,428.294,428.267,428.24,428.213,428.186,428.158,428.131,428.103,428.075,428.047,428.018,427.99,427.961,427.932,427.903,427.874,427.845,427.816,427.786,427.756,427.726,427.696,427.666,427.635,427.605,427.574,427.543,427.512,427.481,427.449,427.418,427.386,427.354,427.322,427.29,427.258,427.225,427.193,427.16,427.127,427.094,427.061,427.028,426.994,426.961,426.927,426.893,426.859,426.825,426.79,426.756,426.721,426.687,426.652,426.617,426.582,426.547,426.511,426.476,426.44,426.404,426.368,426.334],"q":[10993.2,11807.2,12683.1,13625.8,14640.4,15732.5,16908.1,18173.6,19536.1,21003,22582.4,24282.9,26114,28085.6,30208.6,32494.5,34955.8,37605.8,40458.8,43530.2,46836.2,50394.4,54223.2,58342.5,62773.1,67537.1,72657.9,78159.7,84068.1,90409.4,97210.5,104499,112303,120649,129563,139072,149196,159954,171360,183421,196135,209490,223460,238006,253068,268566,284397,300434,316521,332479,348101,363164,377425,390638,402559,412959,421635,428424,433213,435945,436623,435312,432132,427250,420871,413223,404547,395088,385078,374736,364260,353822,343570,333628,324094,315046,306544,298630,291331,284663,278634,273242,268478,264327,260770,257783,255336,253394,251917,250859,250167,249777,249620,249613,249665,249673,249523,249095,248260,246889,244856,242046,238362,233732,228120,221523,213984,205583,196434,186683,176489,166023,155449,144921,134572,124514,114832,105589,96823.2,88555.9,80791.4,73522.5,66733.6,60403.7,54509.1,49025.6,43929.7,39200.2,34818.3,30768.2,27036.8,23613.5,20489,17655.2,15103.8,12825.8,10810.4,9045.18,7515.39,6204.17,5092.9,4161.68,3389.92,2757.05,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],"qrad":[419.742,3840.81,5683.22,7139.3,8446.08,9702.05,10957.4,12243.1,13582.9,14994.1,16491.5,18088.4,19797.3,21630.6,23600.9,25721.3,28005.2,30466.6,33120.4,35982.4,39069.4,42395.7,45978.9,49841.2,54003.5,58489.1,63321.5,68525.2,74121.7,80139.1,86605.6,93550.1,101001,108986,117527,126651,136382,146744,157751,169413,181728,194687,208272,222445,237156,252328,267865,283635,299494,315274,330777,345785,360065,373372,385467,396125,405144,412358,417648,420950,422256,421620,419149,414996,409354,402438,394479,385709,376355,366628,356722,346805,337028,327510,318352,309632,301410,293731,286625,280110,274196,268885,264170,260042,256483,253471,250980,248980,247432,246296,245521,245049,244816,244746,244751,244736,244594,244209,243461,242224,240379,237813,234431,230162,224964,218833,211803,203944,195361,186186,176570,166670,156644,146637,136780,127177,117913,109049,100630,92676.6,85194.7,78179.5,71618.4,65494.2,59790.1,54481.8,49546.6,44964,40715.5,36786.8,33168.3,29844.7,26804.1,24036.1,21530.2,19275.5,17259.6,15467.6,13887.2,12502.1,11295.4,10249.7,9347.37,8572.84,7393.13,6297.35,5832.07,5500.72,5235.77,5012.26,4817.86,4645.19,4489.71,4348.11,4218.14,4097.97,3986.32,3882.03,3784.29,3692.32,3605.59,3523.56,3445.75,3371.83,3301.45,3234.32,3170.18,3108.84,3050.07,2993.68,2939.54,2887.49,2837.39,2789.12,2742.59,2697.69,2654.31,2612.4,2571.86,2532.61,2494.6,2457.77,2422.06,2387.4,2353.75,2321.08,2289.32,2258.44,2228.41,2199.18,2170.73,2143.02,2116.01,2089.69,2064.03,2038.99,2014.56,1990.72,1967.43,1944.69,1922.47,1900.75,1879.52,1858.76,1838.44,1818.57,1799.12,1780.09,1761.44,1743.18,1725.3,1707.77,1690.59,1673.75,1657.24,1641.05,1625.17,1609.58,1594.29,1579.28,1564.55,1550.08,1535.87,1521.92,1508.21,1494.74,1481.51,1468.5,1455.72,1443.14,1430.78,1418.63,1406.67,1394.9,1383.33,1371.94,1360.73,1349.7,1338.84,1328.15,1317.62,1307.25,1297.04,1286.98,1277.07,1267.3,1257.68,1248.2,1238.85,1229.64,1220.55,1211.6,1202.77,1194.06,1185.47,1177,1168.64,1160.39,1152.26,1144.23,1136.31,1128.49,1120.77,1113.15,1105.63,1098.2,1090.87,1083.63,1076.47,1069.41,1062.43,1055.54,1048.73,1042,1035.36,1028.79,1022.31,1015.9,1009.57,1003.31,997.119,991.002,984.96,978.985,973.075,967.231,961.451,955.734,950.086,944.499,938.972,933.503,928.092,922.738,917.443,912.206,907.024,901.894,896.817,891.792,886.817,881.897,877.027,872.206,867.432,862.705,858.024,853.39,848.804,844.263,839.766,835.311,830.898,826.527,822.198,817.913,813.667,809.461,805.294,801.165,797.073,793.02,789.005,785.027,781.085,777.178,773.305,769.467,765.662,761.893,758.157,754.454,750.783,747.143,743.535,739.957,736.41,732.895,729.41,725.954,722.526,719.127,715.756,712.413,709.099,705.812,702.552,699.319,696.112,692.93,689.774,686.643,683.538,680.458,677.402,674.371,671.363,668.378,665.416,662.477,659.562,656.67,653.8,650.952,648.125,645.32,642.535,639.771,637.029,634.308,631.607,628.926,626.265,623.623,621,618.396,615.812,613.246,610.7,608.172,605.662,603.17,600.695,598.238,595.798,593.376,590.971,588.584,586.212,583.858,581.519,579.197,576.89,574.6,572.325,570.066,567.823,565.595,563.381,561.183,558.999,556.83,554.675,552.535,550.41,548.298,546.2,544.117,542.046,539.989,537.946,535.916,533.899,531.895,529.904,527.926,525.961,524.008,522.068,520.14,518.224,516.32,514.429,512.549,510.681,508.825,506.981,505.147,503.326,501.515,499.716,497.927,496.15,494.384,492.629,490.884,489.15,487.427,485.714,484.011,482.318,480.636,478.964,477.302,475.65,474.008,472.376,470.753,469.14,467.536,465.942,464.357,462.782,461.216,459.659,458.112,456.573,455.043,453.522,452.01,450.507,449.012,447.526,446.049,444.58,443.12,441.668,440.224,438.788,437.361,435.941,434.53,433.127,431.732,430.345,428.965,427.593,426.229,424.873,423.524,422.183,420.849,419.523,418.204,416.892,415.588,414.291,413.001,411.718,410.442,409.173,407.912,406.657,405.409,404.168,402.933,401.706,400.485,399.271,398.063,396.862,395.667,394.479,393.297,392.122,390.953,389.79,388.633,387.483,386.339,385.201,384.069,382.943,381.823,380.709,379.601,378.499,377.402,376.312,375.227,374.148,373.075,372.007,370.945,369.888,368.837,367.792,366.752,365.717,364.688,363.664,362.645,361.632,360.624,359.622,358.624,357.632,356.644,355.662,354.685,353.713,352.746,351.784,350.827,349.874,348.927,347.985,347.047,346.114,345.186,344.262,343.343,342.429,341.52,340.615,339.715,338.819,337.928,337.041,336.159,335.281,334.407,333.538,332.674,331.813,330.957,330.106,329.258,328.415,327.576,326.741,325.91,325.084,324.261,323.443,322.629,321.818,321.012,320.21,319.411,318.617,317.826,317.04,316.257,315.478,314.703,313.931,313.164,312.4,311.64,310.884,310.131,309.382,308.637,307.895,307.157,306.422,305.691,304.964,304.24,303.519,302.802,302.089,301.379,300.672,299.969,299.269,298.572,297.879,297.189,296.503,295.819,295.139,294.463,293.789,293.119,292.451,291.787,291.127,290.469,289.814,289.163,288.514,287.869,287.227,286.588,285.951,285.318,284.688,284.06,283.436,282.815,282.196,281.58,280.968,280.358,279.751,279.147,278.545,277.947,277.351,276.758,276.167,275.58,274.995,274.413,273.833,273.257,272.683,272.111,271.542,270.976,270.413,269.852,269.293,268.737,268.184,267.633,267.085,266.539,265.996,265.455,264.917,264.381,263.848,263.317,262.788,262.262,261.738,261.217,260.698,260.181,259.667,259.155,258.645,258.137,257.632,257.129,256.629,256.13,255.634,255.14,254.648,254.159,253.672,253.186,252.703,252.223,251.744,251.267,250.793,250.321,249.85,249.382,248.916,248.452,247.99,247.53,247.072,246.616,246.162,245.71,245.261,244.813,244.367,243.923,243.481,243.04,242.602,242.166,241.732,241.299,240.868,240.44,240.013,239.588,239.165,238.743,238.324,237.906,237.49,237.076,236.664,236.253,235.844,235.437,235.032,234.629,234.227,233.827,233.428,233.032,232.637,232.244,231.852,231.462,231.074,230.687,230.302,229.919,229.537,229.157,228.779,228.402,228.026,227.653,227.28,226.91,226.541,226.173,225.808,225.443,225.08,224.719,224.359,224.001,223.644,223.289,222.935,222.583,222.232,221.882,221.534,221.188,220.842,220.499,220.157,219.816,219.476,219.138,218.802,218.466,218.132,217.8,217.469,217.139,216.81,216.483,216.158,215.833,215.51,215.188,214.868,214.548,214.231,213.914,213.599,213.285,212.972,212.66,212.35,212.041,211.733,211.427,211.121,210.817,210.515,210.213,209.912,209.613,209.315,209.018,208.723,208.428,208.135,207.843,207.552,207.262,206.973,206.686,206.399,206.114,205.83,205.547,205.265,204.984,204.704,204.426,204.148,203.872,203.596,203.322,203.049,202.777,202.506,202.236,201.967,201.699,201.432,201.166,200.901,200.637,200.374,200.113,199.852,199.592,199.333,199.076,198.819,198.563,198.308,198.054,197.801,197.549,197.298,197.048,196.799,196.551,196.304,196.058,195.812,195.568,195.324,195.082,194.84,194.599,194.36,194.121,193.883,193.645,193.409,193.174,192.939,192.706,192.482]}}};
+  const $ = id => document.getElementById(id);
+  const DEF = { V_E: 7800, gamma_E_deg: -1.5, beta: 400, LD: 0.3, Rn: 4, shield: "li900" };
+  const state = { ...DEF };
+  const MATS = ["li900", "li2200", "frci12"];
+  const LIMIT_BOND = 450, TARGET = 430;
+
+  // ---------- worker ----------
+  const src = $("tps-src").textContent + `
+    let last = { li900: 0.07, li2200: 0.064, frci12: 0.072 };
+    onmessage = (e) => {
+      const { id, kind, p } = e.data;
+      try {
+        const tr = TPS.fly(p);
+        const shields = kind === "compare" ? ["li900", "li2200", "frci12"] : [p.shield];
+        const out = [];
+        for (const sh of shields) {
+          const c = { shield: sh, Rn: p.Rn };
+          const s = TPS.size(c, tr, { guess: last[sh], onRun: (n, L) => postMessage({ id, progress: { sh, n, L } }) });
+          if (!s.thickness) { out.push({ sh, tooThick: true }); continue; }
+          last[sh] = s.thickness;
+          const r = TPS.simulate(c, s.thickness, tr, { keepEvery: kind === "compare" ? 1e9 : 10 });
+          out.push({ sh, thickness: s.thickness, runs: s.runs, mass: TPS.arealMass(c, s.thickness),
+            res: { peakQ: r.peakQ, tPeakQ: r.tPeakQ, load: r.load, peakTs: r.peakTs, tPeakTs: r.tPeakTs, peakTb: r.peakTb, tPeakTb: r.tPeakTb, tHeat: r.tHeat, tEnd: r.tEnd, hist: kind === "compare" ? null : r.hist } });
+        }
+        const st = Math.max(1, Math.floor(tr.t.length / 700)), pick = a => Array.from(a).filter((_, i) => i % st === 0 || i === a.length - 1);
+        postMessage({ id, done: { out, traj: { t: pick(tr.t), V: pick(tr.V), h: pick(tr.h), g: pick(tr.gload) } } });
+      } catch (err) { postMessage({ id, error: err.message }); }
+    };`;
+  let worker = null;
+  try { worker = new Worker(URL.createObjectURL(new Blob([src], { type: "text/javascript" }))); } catch (e) { worker = null; }
+  let reqId = 0, pending = null, busy = false;
+
+  function request(kind) {
+    const p = { V_E: state.V_E, gamma_E_deg: state.gamma_E_deg, beta: state.beta, LD: state.LD, Rn: state.Rn, shield: state.shield };
+    if (busy) { pending = kind; return; }
+    busy = true; const id = ++reqId;
+    setStatus("busy", kind === "compare" ? "Sizing all three tiles…" : "Sizing the shield…");
+    $("compare").disabled = true;
+    const finish = msg => {
+      busy = false; $("compare").disabled = false;
+      if (msg.error) setStatus("error", msg.error);
+      else if (kind === "compare") showCompare(msg.done, p);
+      else { current = { params: p, ...msg.done.out[0], traj: msg.done.traj }; if (current.tooThick) setStatus("error", "Even 25 cm of this tile cannot keep the bondline under 430 K for this entry."); else { render(); clearCompare(); } }
+      if (pending) { const k = pending; pending = null; request(k); }
+    };
+    if (!worker) { // fallback: run on the main thread
+      setTimeout(() => {
+        try {
+          const tr = TPS.fly(p), shields = kind === "compare" ? MATS : [p.shield], out = [];
+          for (const sh of shields) { const c = { shield: sh, Rn: p.Rn }, s = TPS.size(c, tr); if (!s.thickness) { out.push({ sh, tooThick: true }); continue; }
+            const r = TPS.simulate(c, s.thickness, tr); out.push({ sh, thickness: s.thickness, runs: s.runs, mass: TPS.arealMass(c, s.thickness), res: r }); }
+          finish({ done: { out, traj: { t: tr.t, V: tr.V, h: tr.h, g: tr.gload } } });
+        } catch (err) { finish({ error: err.message }); }
+      }, 30);
+      return;
+    }
+    worker.onmessage = e => {
+      if (e.data.id !== id) return;
+      if (e.data.progress) { const g = e.data.progress; setStatus("busy", `Sizing ${TPS.MATERIALS[g.sh].name}: run ${g.n}, trying ${(g.L * 100).toFixed(2)} cm`); return; }
+      finish(e.data);
+    };
+    worker.postMessage({ id, kind, p });
+  }
+
+  function setStatus(kind, text) { $("status").className = "status " + (kind === "ok" ? "" : kind); $("statusText").textContent = text; }
+
+  // ---------- controls ----------
+  const fields = [
+    ["vE", "V_E", v => `${(v / 1000).toFixed(2)} km/s`],
+    ["gam", "gamma_E_deg", v => `${v.toFixed(1)}°`],
+    ["beta", "beta", v => `${v.toFixed(0)} kg/m²`],
+    ["ld", "LD", v => v.toFixed(2)],
+    ["rn", "Rn", v => `${v.toFixed(1)} m`],
+  ];
+  let timer = null;
+  for (const [id, key, f] of fields) {
+    $(id).addEventListener("input", e => { state[key] = +e.target.value; $(id + "o").textContent = f(state[key]); clearTimeout(timer); timer = setTimeout(() => request("size"), 250); });
+  }
+  const mats = $("mats");
+  for (const m of MATS) {
+    const b = document.createElement("button"); b.type = "button"; b.className = "chip"; b.dataset.m = m; b.textContent = TPS.MATERIALS[m].name.replace(" silica tile", "").replace(" fibrous insulation", "");
+    b.addEventListener("click", () => { state.shield = m; syncInputs(); request("size"); });
+    mats.appendChild(b);
+  }
+  $("reset").addEventListener("click", () => { Object.assign(state, DEF); syncInputs(); current = BASE_CURRENT; render(); clearCompare(); });
+  $("compare").addEventListener("click", () => request("compare"));
+  function syncInputs() {
+    for (const [id, key, f] of fields) { $(id).value = state[key]; $(id + "o").textContent = f(state[key]); }
+    for (const b of mats.children) b.setAttribute("aria-pressed", b.dataset.m === state.shield);
+  }
+
+  // ---------- rendering ----------
+  const BASE_CURRENT = { params: BASE.params, sh: BASE.params.shield, thickness: BASE.thickness, runs: BASE.runs,
+    mass: TPS.arealMass({ shield: "li900" }, BASE.thickness), res: BASE.res, traj: BASE.traj };
+  let current = BASE_CURRENT;
+
+  const fmt = (v, d = 1) => v.toFixed(d);
+  function render() {
+    const c = current, r = c.res, M = TPS.MATERIALS[c.sh];
+    const gPeak = Math.max(...c.traj.g), surfOk = r.peakTs <= M.maxT;
+    $("tiles").innerHTML = [
+      tile("Shield thickness", `${fmt(c.thickness * 100, 2)}<small> cm</small>`, M.name, true),
+      tile("Areal mass", `${fmt(c.mass, 2)}<small> kg/m²</small>`, "tile + bond + skin"),
+      tile("Peak heat flux", `${fmt(r.peakQ / 1e4)}<small> W/cm²</small>`, `at t = ${r.tPeakQ.toFixed(0)} s`),
+      tile("Heat load", `${fmt(r.load / 1e6)}<small> MJ/m²</small>`, "integrated over the entry"),
+      tile("Peak deceleration", `${fmt(gPeak, 2)}<small> g</small>`, "aerodynamic load"),
+      tile("Peak surface", `${fmt(r.peakTs, 0)}<small> K</small>`, `${surfOk ? '<span class="pill ok">Within</span>' : '<span class="pill bad">Over</span>'} tile limit ${M.maxT.toFixed(0)} K`),
+      tile("Peak bondline", `${fmt(r.peakTb, 1)}<small> K</small>`, `at t = ${r.tPeakTb.toFixed(0)} s, target ${TARGET} K`),
+      tile("Heating ends", `${fmt(r.tHeat, 0)}<small> s</small>`, "speed falls to 500 m/s"),
+    ].join("");
+    setStatus("ok", `Sized in ${c.runs} coupled runs. Bondline peaks ${((r.tPeakTb - r.tHeat) / 60).toFixed(0)} min after heating ends.`);
+    draw();
+  }
+  const tile = (k, v, s, lead) => `<div class="tile${lead ? " lead" : ""}"><div class="k">${k}</div><div class="v">${v}</div><div class="s">${s}</div></div>`;
+
+  function clearCompare() { $("cmp").innerHTML = `<tr><td colspan="7" style="color:var(--muted)">Press Compare tiles to size LI-900, LI-2200 and FRCI-12 for the current entry.</td></tr>`; }
+  function showCompare(done, p) {
+    const rows = done.out.map(o => ({ ...o, M: TPS.MATERIALS[o.sh] }));
+    const passing = rows.filter(o => !o.tooThick && o.res.peakTs <= o.M.maxT);
+    const best = passing.length ? passing.reduce((a, b) => a.mass < b.mass ? a : b).sh : null;
+    $("cmp").innerHTML = rows.map(o => o.tooThick
+      ? `<tr><td>${o.M.name}</td><td class="num">${o.M.rho.toFixed(0)} kg/m³</td><td colspan="5">needs more than 25 cm</td></tr>`
+      : `<tr class="${o.sh === best ? "best" : ""}"><td>${o.M.name}</td><td class="num">${o.M.rho.toFixed(0)} kg/m³</td><td class="num">${(o.thickness * 100).toFixed(2)} cm</td><td class="num">${o.mass.toFixed(2)} kg/m²</td><td class="num">${o.res.peakTs.toFixed(0)} K</td><td class="num">${o.M.maxT.toFixed(0)} K</td><td>${o.res.peakTs <= o.M.maxT ? '<span class="pill ok">Within</span>' : '<span class="pill bad">Over</span>'}</td></tr>`).join("");
+    setStatus("ok", best ? `Lightest tile that stays within its own surface limit: ${TPS.MATERIALS[best].name}.` : "No tile stays within its surface limit for this entry.");
+  }
+
+  // ---------- charts ----------
+  const css = () => { const s = getComputedStyle(document.documentElement), g = k => s.getPropertyValue(k).trim();
+    return Object.fromEntries(["ink", "muted", "grid", "rule", "heat", "cool", "back", "limit", "surface", "tile", "bond", "al", "bad"].map(k => [k, g("--" + k)])); };
+  function setup(cv) {
+    const dpr = window.devicePixelRatio || 1, w = cv.clientWidth, h = cv.clientHeight;
+    if (cv.width !== Math.round(w * dpr) || cv.height !== Math.round(h * dpr)) { cv.width = Math.round(w * dpr); cv.height = Math.round(h * dpr); }
+    const ctx = cv.getContext("2d"); ctx.setTransform(dpr, 0, 0, dpr, 0, 0); ctx.clearRect(0, 0, w, h); return { ctx, w, h };
+  }
+  function ticks(lo, hi, n = 5) {
+    const raw = (hi - lo) / n, mag = Math.pow(10, Math.floor(Math.log10(raw)));
+    const step = [1, 2, 2.5, 5, 10].map(m => m * mag).find(s => s >= raw);
+    const out = []; for (let v = Math.ceil(lo / step - 1e-9) * step; v <= hi + 1e-9; v += step) out.push(+v.toPrecision(10)); return out;
+  }
+  const mono = () => getComputedStyle(document.documentElement).getPropertyValue("--font-mono");
+  const disp = () => getComputedStyle(document.documentElement).getPropertyValue("--font-display");
+
+  function chart(id, o, C) {
+    const { ctx, w, h } = setup($(id));
+    const m = { l: 56, r: 14, t: 46, b: 38 }, pw = w - m.l - m.r, ph = h - m.t - m.b;
+    const [x0, x1] = o.xlim, [y0, y1] = o.ylim;
+    const X = x => m.l + (x - x0) / (x1 - x0) * pw, Y = y => m.t + (1 - (y - y0) / (y1 - y0)) * ph;
+    ctx.font = "11px " + mono(); ctx.lineWidth = 1; ctx.fillStyle = C.muted;
+    ctx.textAlign = "right"; ctx.textBaseline = "middle";
+    for (const v of ticks(y0, y1, 4)) { const y = Math.round(Y(v)) + 0.5; ctx.strokeStyle = C.grid; ctx.beginPath(); ctx.moveTo(m.l, y); ctx.lineTo(m.l + pw, y); ctx.stroke(); ctx.fillText(o.yfmt ? o.yfmt(v) : v, m.l - 6, y); }
+    ctx.textAlign = "center"; ctx.textBaseline = "top";
+    for (const v of ticks(x0, x1, w < 420 ? 4 : 6)) { const x = Math.round(X(v)) + 0.5; ctx.strokeStyle = C.grid; ctx.beginPath(); ctx.moveTo(x, m.t); ctx.lineTo(x, m.t + ph); ctx.stroke(); ctx.fillText(o.xfmt ? o.xfmt(v) : v, x, m.t + ph + 5); }
+    ctx.strokeStyle = C.rule; ctx.strokeRect(m.l + 0.5, m.t + 0.5, pw - 1, ph - 1);
+    ctx.fillStyle = C.muted; ctx.fillText(o.xlabel, m.l + pw / 2, m.t + ph + 20);
+    ctx.font = "600 13px " + disp(); ctx.fillStyle = C.ink; ctx.textAlign = "left"; ctx.textBaseline = "alphabetic"; ctx.fillText(o.title, m.l, 19);
+    // legend
+    ctx.font = "12px " + disp(); let lx = m.l; ctx.textAlign = "left";
+    for (const s of o.series) { if (!s.label) continue; ctx.strokeStyle = s.color; ctx.lineWidth = 2; ctx.setLineDash(s.dash || []); ctx.beginPath(); ctx.moveTo(lx, 33); ctx.lineTo(lx + 16, 33); ctx.stroke(); ctx.setLineDash([]); ctx.fillStyle = C.muted; ctx.fillText(s.label, lx + 21, 37); lx += 21 + ctx.measureText(s.label).width + 14; }
+    ctx.save(); ctx.beginPath(); ctx.rect(m.l, m.t, pw, ph); ctx.clip();
+    for (const hl of o.hlines || []) {
+      const y = Math.round(Y(hl.y)) + 0.5; ctx.strokeStyle = hl.color; ctx.lineWidth = 1; ctx.setLineDash([5, 4]); ctx.beginPath(); ctx.moveTo(m.l, y); ctx.lineTo(m.l + pw, y); ctx.stroke(); ctx.setLineDash([]);
+      ctx.font = "11px " + mono(); ctx.fillStyle = hl.color; ctx.textAlign = "right"; ctx.textBaseline = "bottom"; ctx.fillText(hl.label, m.l + pw - 4, y - 2);
+    }
+    for (const s of o.series) {
+      ctx.strokeStyle = s.color; ctx.lineWidth = s.width || 1.8; ctx.setLineDash(s.dash || []); ctx.beginPath();
+      for (let i = 0; i < s.x.length; i++) { const px = X(s.x[i]), py = Y(s.y[i]); i ? ctx.lineTo(px, py) : ctx.moveTo(px, py); }
+      ctx.stroke(); ctx.setLineDash([]);
+    }
+    for (const mk of o.markers || []) {
+      const px = X(mk.x), py = Y(mk.y); ctx.fillStyle = mk.color; ctx.beginPath(); ctx.arc(px, py, 4, 0, 6.2832); ctx.fill();
+      ctx.font = "11px " + mono(); const tw = ctx.measureText(mk.label).width;
+      let al = mk.align || "left"; if (al === "left" && px + 8 + tw > m.l + pw) al = "right"; if (al === "right" && px - 8 - tw < m.l) al = "left";
+      ctx.textAlign = al; ctx.textBaseline = "middle"; ctx.fillStyle = C.ink; ctx.fillText(mk.label, px + (al === "right" ? -8 : 8), py + (mk.dy || 0));
+    }
+    ctx.restore();
+  }
+
+  function draw() {
+    if (!current || current.tooThick) return;
+    const C = css(), c = current, r = c.res, hst = r.hist, tr = c.traj, M = TPS.MATERIALS[c.sh];
+    // altitude vs velocity, with peak heating and peak g marked
+    const vk = Array.from(tr.V, v => v / 1000), hk = Array.from(tr.h, v => v / 1000);
+    let iq = 0, ig = 0; const qs = Array.from(tr.t, (t, i) => Math.sqrt(1.225 * Math.exp(-tr.h[i] / 7200)) * tr.V[i] ** 3);
+    for (let i = 0; i < qs.length; i++) { if (qs[i] > qs[iq]) iq = i; if (tr.g[i] > tr.g[ig]) ig = i; }
+    chart("cTraj", { title: "Trajectory: altitude vs speed", xlabel: "speed (km/s)", xlim: [0, Math.ceil(Math.max(...vk))], ylim: [0, 125], yfmt: v => v + " km",
+      series: [{ x: vk, y: hk, color: C.ink }],
+      markers: [{ x: vk[iq], y: hk[iq], color: C.heat, label: "peak heating", align: "left", dy: -12 }, { x: vk[ig], y: hk[ig], color: C.cool, label: `peak ${tr.g[ig].toFixed(1)} g`, align: "right", dy: 12 }] }, C);
+    // heat flux vs time (heating phase)
+    const tq = [], q = [], qr = [];
+    for (let i = 0; i < hst.t.length && hst.t[i] <= r.tHeat * 1.05; i++) { tq.push(hst.t[i]); q.push(hst.q[i] / 1e4); qr.push(hst.qrad[i] / 1e4); }
+    chart("cQ", { title: "Stagnation-point heat flux", xlabel: "time from entry interface (s)", xlim: [0, Math.ceil(r.tHeat * 1.05 / 50) * 50], ylim: [0, Math.max(...q) * 1.12], yfmt: v => v + "",
+      series: [{ x: tq, y: q, color: C.heat, label: "convective, W/cm²" }, { x: tq, y: qr, color: C.heat, dash: [4, 3], width: 1.3, label: "re-radiated" }] }, C);
+    // temperatures vs time
+    const tmin = Array.from(hst.t, t => t / 60);
+    chart("cT", { title: "Wall temperatures", xlabel: "time from entry interface (min)", xlim: [0, Math.ceil(r.tEnd / 60 / 10) * 10], ylim: [250, Math.max(r.peakTs, M.maxT) * 1.08], yfmt: v => v + " K",
+      series: [{ x: tmin, y: hst.Ts, color: C.heat, label: "tile surface" }, { x: tmin, y: hst.Tb, color: C.cool, label: "bondline" }, { x: tmin, y: hst.Tback, color: C.back, dash: [3, 3], width: 1.3, label: "inner skin" }],
+      hlines: [{ y: M.maxT, color: C.bad, label: `tile max use ${M.maxT.toFixed(0)} K` }, { y: LIMIT_BOND, color: C.limit, label: `aluminium limit ${LIMIT_BOND} K` }],
+      markers: [{ x: r.tPeakTb / 60, y: r.peakTb, color: C.cool, label: `bondline peak ${r.peakTb.toFixed(0)} K` }] }, C);
+    drawLayup(C);
+  }
+
+  function drawLayup(C) {
+    const { ctx, w, h } = setup($("layup"));
+    const L = current.thickness, layers = [["tile", L, C.tile, TPS.MATERIALS[current.sh].name], ["bond", 0.0002, C.bond, "RTV-560 bond"], ["al", 0.002, C.al, "Al 2219 skin"]];
+    const total = L + 0.0022, x0 = 70, x1 = w - 10, top = 6, hh = 30, sc = (x1 - x0) / total;
+    ctx.font = "11px " + mono(); ctx.fillStyle = C.heat; ctx.textAlign = "left"; ctx.textBaseline = "middle";
+    ctx.fillText("heat →", 4, top + hh / 2);
+    let x = x0;
+    for (const [k, t, col, nm] of layers) { const wd = Math.max(t * sc, k === "bond" ? 1.5 : 2); ctx.fillStyle = col; ctx.fillRect(x, top, wd, hh); x += wd; }
+    ctx.strokeStyle = C.rule; ctx.strokeRect(x0 + 0.5, top + 0.5, x - x0 - 1, hh - 1);
+    ctx.fillStyle = C.ink; ctx.textBaseline = "top";
+    ctx.textAlign = "left"; ctx.fillText(`${layers[0][3]}  ${(L * 100).toFixed(2)} cm`, x0, top + hh + 6);
+    ctx.textAlign = "left"; ctx.fillStyle = C.muted; ctx.fillText("then 0.2 mm RTV bond + 2 mm aluminium skin (right edge)", x0, top + hh + 22);
+  }
+
+  let rz = null;
+  new ResizeObserver(() => { cancelAnimationFrame(rz); rz = requestAnimationFrame(draw); }).observe(document.querySelector(".main"));
+  matchMedia("(prefers-color-scheme: dark)").addEventListener("change", draw);
+  new MutationObserver(draw).observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
+  if (document.fonts) document.fonts.ready.then(draw);
+
+  syncInputs(); render();
+  setStatus("ok", "Baseline: a low-Earth-orbit lifting capsule. Move any input and the shield is re-sized in the background.");
+})();
+</script>

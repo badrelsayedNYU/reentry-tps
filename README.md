@@ -1,5 +1,7 @@
 # Reentry Heating & TPS Thermal Model
 
+**[▶ Try it in your browser](https://badrelsayednyu.github.io/reentry-tps/)** — interactive version that runs the same model live.
+
 How thick does a capsule's heat shield have to be? This project answers that by coupling three
 models — an entry trajectory, a stagnation-point heating correlation, and a transient multi-layer
 conduction model of the wall — and searching for the thinnest heat shield that keeps the bondline
