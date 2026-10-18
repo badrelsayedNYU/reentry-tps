@@ -14,7 +14,7 @@ FILLED = ["li900", "li2200", "frci12", "rtv560", "al2219"]
 def test_remaining_todos_are_refused():
     if "TODO" not in REPO_FILE.read_text():
         pytest.skip("data/materials.yaml has been filled in")
-    with pytest.raises(MissingDataError, match="TODO|limits|wall"):
+    with pytest.raises(MissingDataError, match="limits"):
         load_materials(REPO_FILE)
 
 

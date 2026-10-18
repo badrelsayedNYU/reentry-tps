@@ -104,8 +104,3 @@ limits:
   margin: TODO                       # K below the limit used for sizing
   source: "TODO: source / owner decision"
 
-wall:
-  # Layer thicknesses are design inputs, not in RP-1289.
-  bondline_thickness: TODO   # m
-  structure_thickness: TODO  # m
-  source: "TODO: source"

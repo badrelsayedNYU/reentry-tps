@@ -14,7 +14,7 @@
 import numpy as np
 import pytest
 
-from tps.trajectory import G0, Vehicle, allen_eggers_peaks, allen_eggers_velocity, fly
+from tps.trajectory import G0, SkipOutError, Vehicle, allen_eggers_peaks, allen_eggers_velocity, fly
 
 VE, GAMMA, BETA = 7500.0, -20.0, 500.0
 DECEL = lambda V, g, h, rho: rho * V**2 / (2 * BETA)
@@ -76,3 +76,9 @@ def test_lifting_entry_flattens_the_path():
     assert lifting.g_load.max() < ballistic.g_load.max()
     i_b, i_l = np.argmax(ballistic.accel), np.argmax(lifting.accel)
     assert lifting.h[i_l] > ballistic.h[i_b]
+
+
+def test_skip_out_is_detected():
+    """A very shallow lifting entry at orbital speed bounces off the atmosphere."""
+    with pytest.raises(SkipOutError):
+        fly(Vehicle(300.0, lift_to_drag=0.5), 7900.0, -0.5)

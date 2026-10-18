@@ -123,7 +123,7 @@ def load_materials(path, require=None):
     scope = {k: data["materials"][k] for k in keys}
     missing = _todos(scope, "materials")
     if require is None:
-        for section in ("limits", "wall"):
+        for section in ("limits",):
             missing += _todos(data.get(section, {}), section)
     if missing:
         raise MissingDataError("data/materials.yaml has values still to be supplied (with a source): "

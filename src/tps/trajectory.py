@@ -29,6 +29,10 @@ G0 = 9.80665        # m/s^2
 H_ENTRY = 120e3     # m, entry interface (spec §2.2)
 
 
+class SkipOutError(RuntimeError):
+    """The entry is too shallow: the vehicle leaves the atmosphere again instead of descending."""
+
+
 @dataclass
 class Vehicle:
     beta: float                 # ballistic coefficient m/(C_D A) [kg/m^2]
@@ -73,7 +77,8 @@ class Trajectory:
 
 def fly(vehicle, V_E, gamma_E_deg, h_E=H_ENTRY, H=H_SCALE, rho0=RHO0, V_cutoff=500.0,
         gravity=True, curvature=True, rtol=1e-8, atol=None, n_samples=None):
-    """Integrate from the entry interface until h = 0 or V = V_cutoff (RK45, spec §2.2)."""
+    """Integrate from the entry interface until h = 0 or V = V_cutoff (RK45, spec §2.2).
+    Raises SkipOutError if the vehicle climbs back above the entry interface."""
     beta, LD = vehicle.beta, vehicle.lift_to_drag
 
     def rhs(t, y):
@@ -93,10 +98,15 @@ def fly(vehicle, V_E, gamma_E_deg, h_E=H_ENTRY, H=H_SCALE, rho0=RHO0, V_cutoff=5
     ground.terminal, ground.direction = True, -1
     slow = lambda t, y: y[0] - V_cutoff
     slow.terminal, slow.direction = True, -1
+    skip = lambda t, y: y[2] - (h_E + 1.0)     # climbed back above the entry interface
+    skip.terminal, skip.direction = True, 1
     y0 = [V_E, np.deg2rad(gamma_E_deg), h_E, 0.0]
     atol = atol if atol is not None else [1e-6, 1e-12, 1e-6, 1e-6]
     sol = solve_ivp(rhs, (0.0, 1e5), y0, method="RK45", rtol=rtol, atol=atol,
-                    events=[ground, slow], dense_output=True)
+                    events=[ground, slow, skip], dense_output=True)
+    if sol.status == 1 and sol.t_events[2].size:
+        raise SkipOutError(f"vehicle skipped out of the atmosphere (V_E = {V_E:g} m/s, "
+                           f"gamma_E = {gamma_E_deg:g} deg, L/D = {LD:g})")
     if sol.status != 1:
         raise RuntimeError("trajectory did not reach the ground or the velocity cutoff")
     t_end = sol.t[-1]
