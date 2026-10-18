@@ -1,0 +1,57 @@
+# Material properties for the heat-shield wall. EVERY value must come with a source
+# (e.g. NASA TPSX database, manufacturer data sheet, or a published paper).
+#
+# Format
+#   rho:        density [kg/m^3]
+#   k, cp:      a single number, or a temperature table:
+#                 k: {T: [300, 600, 1200], value: [0.05, 0.07, 0.12]}   # T in K, k in W/(m K)
+#                 cp: {T: [...], value: [...]}                          # J/(kg K)
+#   emissivity: total hemispherical emissivity of the outer surface (heat-shield materials)
+#   max_use_temperature: reuse/single-use surface limit [K] (heat-shield materials)
+#   source:     citation for the values in this entry
+#
+# Any value left as TODO stops the analysis with a list of what is missing; nothing is guessed.
+
+materials:
+  shield_1:
+    name: "TODO: heat-shield material 1"
+    role: heat_shield
+    rho: TODO
+    k: TODO
+    cp: TODO
+    emissivity: TODO
+    max_use_temperature: TODO
+    source: "TODO: source"
+
+  shield_2:
+    name: "TODO: heat-shield material 2"
+    role: heat_shield
+    rho: TODO
+    k: TODO
+    cp: TODO
+    emissivity: TODO
+    max_use_temperature: TODO
+    source: "TODO: source"
+
+  bondline:
+    name: "TODO: adhesive"
+    role: bondline
+    rho: TODO
+    k: TODO
+    cp: TODO
+    thickness: TODO        # m
+    source: "TODO: source"
+
+  structure:
+    name: "TODO: substructure (e.g. aluminium or composite skin)"
+    role: structure
+    rho: TODO
+    k: TODO
+    cp: TODO
+    thickness: TODO        # m
+    source: "TODO: source"
+
+limits:
+  bondline_temperature_limit: TODO   # K
+  margin: TODO                       # K below the limit used for sizing
+  source: "TODO: source"

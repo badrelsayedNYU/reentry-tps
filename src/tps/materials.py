@@ -77,3 +77,46 @@ class Material:
     def enthalpy(self, T):
         """Specific enthalpy e(T) = integral_0^T c_p dT' [J/kg] (exact for the tabulated c_p)."""
         return self.cp.integral(T)
+
+
+class MissingDataError(ValueError):
+    """Raised when data/materials.yaml still contains TODO placeholders."""
+
+
+def _todos(node, path=""):
+    if isinstance(node, dict):
+        return [p for k, v in node.items() for p in _todos(v, f"{path}.{k}" if path else str(k))]
+    if isinstance(node, list):
+        return [p for i, v in enumerate(node) for p in _todos(v, f"{path}[{i}]")]
+    return [path] if isinstance(node, str) and node.strip().upper().startswith("TODO") else []
+
+
+def _prop(spec):
+    if isinstance(spec, dict):
+        return make_property((spec["T"], spec["value"]))
+    return make_property(spec)
+
+
+def load_materials(path, require=None):
+    """Read the materials file. Returns (materials: dict name -> Material, entries: raw dicts, limits).
+
+    Refuses to return anything if a required entry (or, by default, any entry) still holds a TODO:
+    material property values are never guessed (spec ground rules).
+    """
+    import yaml
+
+    with open(path) as fh:
+        data = yaml.safe_load(fh)
+    keys = require if require is not None else list(data.get("materials", {}))
+    scope = {k: data["materials"][k] for k in keys}
+    missing = _todos(scope, "materials")
+    if require is None:
+        missing += _todos(data.get("limits", {}), "limits")
+    if missing:
+        raise MissingDataError("data/materials.yaml has values still to be supplied (with a source): "
+                               + ", ".join(missing))
+    materials = {}
+    for key, e in scope.items():
+        materials[key] = Material(e["name"], float(e["rho"]), _prop(e["k"]), _prop(e["cp"]),
+                                  e.get("emissivity"), e["source"])
+    return materials, scope, data.get("limits", {})

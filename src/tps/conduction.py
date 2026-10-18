@@ -124,6 +124,44 @@ class AdiabaticBC(FluxBC):
         super().__init__(0.0)
 
 
+SIGMA = 5.670374419e-8  # Stefan–Boltzmann constant [W/(m^2 K^4)] (CODATA 2018)
+
+
+class RadiatingFluxBC:
+    """Heated, re-radiating surface (spec §3, surface energy balance):
+
+        -k dT/dx|_surface = q(t, T_s) - eps sigma (T_s^4 - T_inf(t)^4)
+
+    q may depend on the surface temperature (e.g. the hot-wall correction); it is then given as
+    q(t, T_s) together with its derivative dq_dT(t, T_s). The T^4 term is Newton-linearized:
+        eps sigma T^4 ~ eps sigma [T*^4 + 4 T*^3 (T - T*)].
+    With emissivity 0 this is a plain flux BC; with q = 0 it is a radiating back wall.
+    """
+
+    def __init__(self, q, emissivity, T_inf, dq_dT=None):
+        self.q = q if callable(q) else (lambda t, Ts, q=float(q): q)
+        self.dq_dT = dq_dT or (lambda t, Ts: 0.0)
+        self.eps = float(emissivity)
+        self.T_inf = T_inf if callable(T_inf) else (lambda t, T=float(T_inf): T)
+
+    def fixed(self, t):
+        return None
+
+    def radiated(self, t, Ts):
+        """Net radiated flux eps sigma (T_s^4 - T_inf^4) [W/m^2]."""
+        return self.eps * SIGMA * (Ts**4 - self.T_inf(t) ** 4)
+
+    def linearize(self, t, T_star):
+        q0 = self.q(t, T_star) - self.radiated(t, T_star)
+        dq = self.dq_dT(t, T_star) - 4.0 * self.eps * SIGMA * T_star**3
+        return q0, dq
+
+
+def RadiationBC(emissivity, T_env):
+    """Back wall radiating to an environment (e.g. the cabin) at T_env: no other heat input."""
+    return RadiatingFluxBC(0.0, emissivity, T_env)
+
+
 # ---------------------------------------------------------------- solver
 
 @dataclass
