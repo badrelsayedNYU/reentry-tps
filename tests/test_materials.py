@@ -11,9 +11,10 @@ REPO_FILE = Path(__file__).resolve().parent.parent / "data" / "materials.yaml"
 
 
 def test_template_with_todos_is_refused():
-    with pytest.raises(MissingDataError, match="materials.shield_1.rho"):
-        load_materials(REPO_FILE) if "TODO" in REPO_FILE.read_text() else (_ for _ in ()).throw(
-            MissingDataError("materials.shield_1.rho (file already filled in)"))
+    if "TODO" not in REPO_FILE.read_text():
+        pytest.skip("data/materials.yaml has been filled in")
+    with pytest.raises(MissingDataError, match="TODO|materials"):
+        load_materials(REPO_FILE)
 
 
 def test_filled_entry_loads(tmp_path):

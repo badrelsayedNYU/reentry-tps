@@ -11,6 +11,7 @@ import numpy as np
 
 from tps.conduction import AdiabaticBC, FluxBC, Layer, TemperatureBC, Wall, solve
 from tps.materials import Material
+from tps.trajectory import G0, Vehicle, allen_eggers_peaks, allen_eggers_velocity, fly
 
 ROOT = Path(__file__).resolve().parent.parent
 TEST = Material.from_values("test slab", rho=1000.0, k=10.0, cp=1000.0)  # alpha = 1e-5 m^2/s
@@ -78,9 +79,59 @@ def fig_conduction():
     print(f"wrote {out}")
 
 
+def fig_allen_eggers():
+    """Validation 5: trajectory vs. Allen–Eggers (V_E = 7.5 km/s, gamma_E = -20 deg, beta = 500 kg/m^2)."""
+    VE, gE, beta = 7500.0, -20.0, 500.0
+    veh = Vehicle(beta)
+    ae = allen_eggers_peaks(VE, gE, beta)
+    runs = (("simulation, no gravity / flat Earth", fly(veh, VE, gE, gravity=False, curvature=False), "tab:blue", "--"),
+            ("simulation, full physics", fly(veh, VE, gE), "tab:red", "-"))
+    fig, axes = plt.subplots(1, 3, figsize=(15, 4.4), layout="constrained")
+
+    h = np.linspace(15e3, 120e3, 800)
+    axes[0].plot(allen_eggers_velocity(h, VE, gE, beta) / VE, h / 1e3, "k-", lw=2.5, alpha=0.35, label="Allen–Eggers")
+    rho = 1.225 * np.exp(-h / 7200.0)
+    a_ae = rho * allen_eggers_velocity(h, VE, gE, beta) ** 2 / (2 * beta) / G0
+    axes[1].plot(a_ae, h / 1e3, "k-", lw=2.5, alpha=0.35, label="Allen–Eggers")
+    for label, tr, color, ls in runs:
+        axes[0].plot(tr.V / VE, tr.h / 1e3, ls, color=color, lw=1.2, label=label)
+        axes[1].plot(tr.g_load, tr.h / 1e3, ls, color=color, lw=1.2, label=label)
+    for key, mk, name in (("decel", "o", "peak deceleration"), ("heating", "s", "peak heating")):
+        axes[0].plot(ae[key]["V"] / VE, ae[key]["h"] / 1e3, mk, color="k", mfc="none", ms=8, label=f"A–E {name}")
+    axes[0].set_xlabel("$V/V_E$")
+    axes[1].set_xlabel("aerodynamic load (g)")
+    for ax in axes[:2]:
+        ax.set_ylabel("altitude (km)")
+        ax.set_ylim(15, 80)
+        ax.legend(fontsize=7.5, loc="upper left")
+    axes[0].set_title(r"Velocity, $V_E$ = 7.5 km/s, $\gamma_E$ = -20°, $\beta$ = 500 kg/m$^2$", fontsize=10)
+    axes[1].set_title(f"Deceleration: peak {ae['decel']['a'] / G0:.1f} g (A–E)", fontsize=10)
+
+    ax = axes[2]
+    gammas = np.array([-10.0, -15.0, -20.0, -30.0, -45.0, -60.0, -85.0])
+    for v, color in ((7500.0, "tab:red"), (15000.0, "tab:purple")):
+        resid = []
+        for g in gammas:
+            tr = fly(veh, v, g)
+            ta, _ = tr.peak(lambda V, gg, hh, r: r * V**2 / (2 * beta))
+            resid.append(100 * (tr.state(ta)[0] / (v * np.exp(-0.5)) - 1))
+        ax.plot(-gammas, resid, "o-", color=color, label=f"$V_E$ = {v / 1e3:g} km/s")
+        ax.axhline(100 * 2 * np.e * 7200 * G0 / v**2, color=color, ls=":", lw=1)
+    ax.set_xlabel(r"entry angle $|\gamma_E|$ (deg)")
+    ax.set_ylabel(r"$V$ at peak deceleration: simulation vs. A–E (%)")
+    ax.set_title("Residual: gravity along the path (steep), path curvature (shallow)\n"
+                 "dotted: gravity/drag ratio at peak deceleration, $2eHg/V_E^2$", fontsize=9)
+    ax.legend(fontsize=8)
+    out = ROOT / "figures" / "validation_allen_eggers.png"
+    fig.savefig(out, dpi=200, bbox_inches="tight")
+    plt.close(fig)
+    print(f"wrote {out}")
+
+
 def main():
     (ROOT / "figures").mkdir(exist_ok=True)
     fig_conduction()
+    fig_allen_eggers()
 
 
 if __name__ == "__main__":
