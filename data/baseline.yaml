@@ -1,26 +1,29 @@
 # Baseline entry case and wall layup. Design inputs, each with a source or stated as an assumption.
 # Material properties and temperature limits live in materials.yaml.
-# Any TODO stops the analysis with a list of what is missing.
+# Any unfilled value stops the analysis with a list of what is missing.
 
 mission:
-  V_E: TODO              # entry velocity at the interface [m/s]
-  gamma_E_deg: TODO      # entry flight-path angle [deg], negative
-  beta: TODO             # ballistic coefficient m/(C_D A) [kg/m^2]
-  lift_to_drag: TODO     # L/D [-] (0 = ballistic)
-  nose_radius: TODO      # stagnation-point nose radius R_n [m]
+  # Representative low-Earth-orbit lifting capsule. These are design assumptions, not
+  # measurements of a named vehicle. 7.8 km/s is circular-orbit speed, so the non-ablating,
+  # no-shock-radiation assumptions stay valid. L/D = 0.3 is the Apollo command-module trim value.
+  V_E: 7800              # entry velocity at the interface [m/s]
+  gamma_E_deg: -1.5      # entry flight-path angle [deg], negative
+  beta: 400              # ballistic coefficient m/(C_D A) [kg/m^2]
+  lift_to_drag: 0.3      # L/D [-] (0 = ballistic)
+  nose_radius: 4.0       # stagnation-point nose radius R_n [m]
   h_E: 120000            # entry interface [m] (spec section 2.2)
   V_cutoff: 500          # end of the hypersonic heating phase [m/s] (spec section 2.2)
-  source: "TODO: source, or 'representative LEO capsule (assumed)'"
+  source: "Assumed representative LEO lifting capsule: V_E = 7.8 km/s (circular-orbit speed), gamma_E = -1.5 deg, beta = 400 kg/m^2, L/D = 0.3 (Apollo CM trim), R_n = 4 m"
 
 wall:
   heat_shield: li900     # key in materials.yaml (sweeps also compare li2200, frci12)
   bondline: rtv560
   structure: al2219
-  bondline_thickness: TODO     # [m]
-  structure_thickness: TODO    # [m]
-  initial_temperature: TODO    # whole wall at entry interface [K]
-  hot_wall: false              # spec section 3, optional correction
-  source: "TODO: source for the thicknesses and initial temperature"
+  bondline_thickness: 0.0002      # [m] assumed RTV bond
+  structure_thickness: 0.002      # [m] assumed aluminium skin
+  initial_temperature: 295        # whole wall at entry interface [K]
+  hot_wall: false                 # spec section 3, optional correction
+  source: "Assumed layup, not in RP-1289: 0.2 mm RTV-560, 2 mm aluminium skin, wall at 295 K before entry"
 
 numerics:                # set by the convergence study (milestone 5)
   shield_cells: 60

@@ -26,10 +26,13 @@ RANGES = {   # parameter: (label, values as a function of the baseline value, di
 def safe_sweep(case, name, values):
     rows = []
     for v in values:
+        print(f"  sizing {name} = {v:g}", flush=True)
         try:
             rows += sweep(case, name, [v])
         except SkipOutError:
-            print(f"  {name} = {v:g}: skip-out, omitted")
+            print(f"  {name} = {v:g}: skip-out, omitted", flush=True)
+        except ValueError as err:
+            print(f"  {name} = {v:g}: {err}, omitted", flush=True)
     return rows
 
 
@@ -43,14 +46,16 @@ def main():
     for ax, (name, (label, values_of, scale)) in zip(axes.flat, RANGES.items()):
         rows = safe_sweep(case, name, values_of(getattr(case, name)))
         results[name] = rows
+        if len(rows) < 2:
+            ax.set_visible(False)
+            continue
         x = np.array([r["value"] for r in rows]) * scale
         ax.plot(x, [100 * r["thickness"] for r in rows], "o-", color="tab:blue")
         ax.axvline(getattr(case, name) * scale, color="0.6", ls=":", lw=1)
         ax.set_xlabel(label)
-        ax.set_ylabel("required thickness (cm)", color="tab:blue")
-        ax2 = ax.twinx()
-        ax2.plot(x, [r["areal_mass"] for r in rows], "s--", color="tab:orange", mfc="none")
-        ax2.set_ylabel(r"areal mass (kg/m$^2$)", color="tab:orange")
+        ax.set_ylabel("required thickness (cm)")
+        # Areal mass is affine in thickness for one material (glue and skin are fixed), so a
+        # second axis would draw the same curve. The table carries the mass.
         for r in rows:
             lines.append(f"| {name} | {r['value']:g} | {100 * r['thickness']:.2f} | {r['areal_mass']:.2f} | "
                          f"{r['peak_q'] / 1e4:.1f} | {r['heat_load'] / 1e6:.1f} | {r['peak_g']:.2f} |")
@@ -60,6 +65,8 @@ def main():
 
     # steep vs. shallow trade: peak heating up, heat load down (spec 6.2)
     rows = results["gamma_E_deg"]
+    if len(rows) < 2:
+        raise SystemExit("entry-angle sweep produced fewer than two sized cases")
     g = -np.array([r["value"] for r in rows])
     fig, axes = plt.subplots(1, 3, figsize=(14, 4.2), layout="constrained")
     axes[0].plot(g, [r["peak_q"] / 1e4 for r in rows], "o-")
@@ -82,7 +89,7 @@ def main():
     for key in MATERIALS:
         c = load(args, shield=key)
         r = size(c, tr)
-        names.append(c.shield.name.split(" (")[0])
+        names.append(c.shield.name.split()[0])
         masses.append(r.areal_mass)
         thick.append(100 * r.thickness)
         mat_lines.append(f"| {c.shield.name} | {c.shield.rho:.0f} | {100 * r.thickness:.2f} | {r.areal_mass:.2f} | "

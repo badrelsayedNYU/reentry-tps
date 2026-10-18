@@ -49,6 +49,12 @@ def test_harder_entry_needs_more_shield(case, sized):
     assert size(harder, tol=2e-4).thickness > r.thickness
 
 
-def test_config_refuses_todos():
+def test_config_refuses_todos(tmp_path):
+    import yaml
+
+    base = yaml.safe_load((ROOT / "data" / "baseline.yaml").read_text())
+    base["mission"]["V_E"] = "TODO"
+    path = tmp_path / "baseline.yaml"
+    path.write_text(yaml.safe_dump(base))
     with pytest.raises(MissingDataError, match="baseline.mission.V_E"):
-        load_case(ROOT / "data" / "materials.yaml", ROOT / "data" / "baseline.yaml")
+        load_case(ROOT / "data" / "materials.yaml", path)

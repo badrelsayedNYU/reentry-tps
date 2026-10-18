@@ -16,7 +16,7 @@
 # for the bondline, and the bondline peaks during soak-back when the vehicle is low in the
 # atmosphere. (A pressure-dependent k(T, p) is a possible extension.)
 #
-# Any value left as TODO stops the analysis with a list of what is missing; nothing is guessed.
+# Any unfilled value stops the analysis with a list of what is missing; nothing is guessed.
 
 materials:
   li900:
@@ -98,9 +98,9 @@ materials:
 
 limits:
   # The bondline sits directly on the aluminium, which is the lower of the two printed maximum
-  # temperatures: RTV-560 1010 R (p. 17-1), aluminium 2219 810 R = 450 K (p. 19-2).
-  # TO CONFIRM by the owner: which one governs T_limit, and the sizing margin.
-  bondline_temperature_limit: TODO   # K
-  margin: TODO                       # K below the limit used for sizing
-  source: "TODO: source / owner decision"
+  # temperatures: RTV-560 1010 R = 561 K (p. 17-1), aluminium 2219 810 R = 450 K (p. 19-2).
+  # The structure limit governs. The 20 K margin is a design assumption (size to 430 K).
+  bondline_temperature_limit: 450   # K, Al 2219 maximum use temperature
+  margin: 20                        # K below the limit used for sizing
+  source: "T_limit: NASA RP-1289 p. 19-2 (810 R). Margin: design assumption, 20 K."
 

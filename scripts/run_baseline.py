@@ -38,6 +38,8 @@ def main():
         ax.axvline(t_q, color="tab:red", ls="--", lw=0.9)
         ax.axvline(t_b, color="tab:purple", ls=":", lw=1.1)
         ax.axvspan(t_heat, t[-1], color="0.93", zorder=0)
+    axes[2, 0].axhline(case.shield.max_use_temperature, color="k", lw=0.8)
+    axes[2, 0].text(t[-1], case.shield.max_use_temperature, " tile limit", va="center", fontsize=8)
     axes[2, 1].axhline(case.T_limit, color="k", lw=0.8)
     axes[2, 1].axhline(case.T_target, color="k", lw=0.8, ls="--")
     axes[2, 1].text(t[-1], case.T_limit, " limit", va="center", fontsize=8)

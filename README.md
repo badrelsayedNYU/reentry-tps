@@ -6,8 +6,9 @@ conduction model of the wall — and searching for the thinnest heat shield that
 (the adhesive between the tiles and the aluminium structure) below its temperature limit, including
 the heat that keeps soaking inward long after the heating has stopped.
 
-> **Status:** models implemented and validated (below). Baseline sizing, sensitivity studies and
-> material comparison are pending the baseline mission definition and wall layup.
+> **Result.** Sized to a 430 K bondline, the baseline entry needs **7.0 cm of LI-900** (16.0 kg/m²
+> for the whole wall). The surface still reaches **1721 K**, above LI-900's 1533 K reuse limit.
+> **FRCI-12** is the lightest of the three tiles that stays inside its own limit.
 
 ## Why this matters
 
@@ -112,13 +113,99 @@ exactly that (right panel). For shallow entries, path curvature takes over as th
 
 ### Grid and time-step convergence
 
-*Pending (computed at the baseline sized thickness).*
+![Bondline convergence](figures/convergence.png)
+
+At the sized thickness, the bondline peak converges at second order in cell size and first order
+in time, which is what backward Euler should do. From 40 to 320 uniform cells the error falls from
+0.38 K to under 0.02 K. The production run (60 cells, stretched toward the hot surface, Δt = 0.5 s)
+sits inside that band: the uniform-grid study is already within 0.1 K at 80 cells, and within
+0.01 K at Δt = 0.5 s.
+
+## Baseline case
+
+A representative low-Earth-orbit lifting capsule, stated as a design assumption in
+[`data/baseline.yaml`](data/baseline.yaml):
+
+| Input | Value | Basis |
+|---|---|---|
+| Entry speed | 7.8 km/s | circular-orbit speed; keeps the no-radiation, non-ablating assumptions valid |
+| Entry angle | −1.5° | shallow lifting corridor |
+| Ballistic coefficient | 400 kg/m² | assumed |
+| L/D | 0.3 | Apollo command-module trim |
+| Nose radius | 4 m | assumed blunt capsule |
+| Heat shield | LI-900, sized | NASA RP-1289 |
+| Bondline / structure | 0.2 mm RTV-560, 2 mm Al 2219 | assumed layup; thicknesses are not in RP-1289 |
+| Initial temperature | 295 K | wall at room temperature before entry |
+| Bondline limit | 450 K, sized to 430 K | Al 2219 maximum-use temperature, RP-1289 p. 19-2; 20 K is a design margin |
+
+The aluminium limit governs. RTV-560's own limit is 561 K, and the adhesive sits on the skin.
 
 ## Results
 
-*Pending: baseline time histories, sized thickness and areal mass, sensitivity to entry speed,
-angle, ballistic coefficient and nose radius, the steep-vs-shallow trade, and the material
-comparison.*
+### Time histories
+
+![Baseline time histories](figures/baseline_time_histories.png)
+
+| Quantity | Value |
+|---|---|
+| Sized LI-900 thickness | 7.03 cm |
+| Areal mass, all layers | 16.04 kg/m² (10.1 kg/m² of tile, 5.9 kg/m² of adhesive and skin) |
+| Peak heat flux | 43.7 W/cm² at t = 299 s |
+| Heat load | 129 MJ/m² |
+| Peak deceleration | 2.63 g |
+| Peak surface temperature | 1721 K, above the 1533 K tile limit |
+| Peak bondline temperature | 429.9 K at t = 3464 s (target 430 K) |
+
+The entry is shallow enough to lift. The vehicle checks its descent, which puts a second peak on
+the deceleration and a shoulder on the heat pulse. Peak heating is at five minutes. The bondline
+does not peak until nearly an hour later, after convective heating has already ended: the heat
+soaks inward through the tile. That delay is why the conduction run continues past the trajectory.
+
+![Temperature profiles](figures/baseline_profiles.png)
+
+At peak heating the gradient is confined to the outer tile. By the bondline peak the wall has
+evened out near 430 K. The adhesive and the skin are 2.2 mm combined, so they sit on top of each
+other at the right-hand edge of the plot.
+
+### What the thickness depends on
+
+![Sensitivity sweeps](figures/sweeps.png)
+
+For one tile material the areal mass moves with thickness (the adhesive and skin do not change),
+so the plots show thickness. The mass for every point is in
+[`results/sweeps.md`](results/sweeps.md).
+
+- **Entry angle** is the classic trade. From 0.9° to 4.5° the peak flux rises from 34 to 86 W/cm²,
+  the heat load falls from 146 to 79 MJ/m², and the tile thins from 7.9 to 4.8 cm. A steeper entry
+  is a hotter, shorter pulse, and the bondline cares about the load, not the peak.
+- **Entry speed**, on this lifting path, does the opposite of a steep ballistic entry. From 7.2 to
+  8.0 km/s the vehicle rides higher, so the peak flux falls (60 to 35 W/cm²) while the pulse lasts
+  longer. Heat load rises from 74 to 183 MJ/m² and the tile grows from 4.8 to 9.2 cm.
+- **Ballistic coefficient.** A heavier vehicle glides in denser air. Thickness grows from 6.0 cm
+  at 200 kg/m² to 8.2 cm at 800 kg/m². Peak deceleration stays at 2.63 g: on this path the load
+  factor is set by L/D, not by β.
+- **Nose radius.** Heating scales as 1/√Rₙ. Doubling the nose from 4 m to 8 m cuts the heat load
+  from 129 to 91 MJ/m² and thins the tile from 7.0 to 6.0 cm.
+
+![Steep versus shallow](figures/entry_angle_trade.png)
+
+### Which tile
+
+![Material comparison](figures/materials.png)
+
+All three coatings are the same RCG (ε = 0.85), so the surface temperature is set by re-radiation
+and is almost the same, about 1710–1720 K. What changes is whether that temperature is allowed.
+
+| Material | Thickness | Areal mass | Peak surface | Limit | Usable here |
+|---|---|---|---|---|---|
+| LI-900 | 7.03 cm | 16.0 kg/m² | 1721 K | 1533 K | no |
+| LI-2200 | 6.39 cm | 28.4 kg/m² | 1711 K | 1756 K | yes |
+| FRCI-12 | 7.21 cm | 19.8 kg/m² | 1718 K | 1756 K | yes |
+
+LI-900 is the lightest wall and the one the bondline constraint would pick, and it overheats its
+surface. LI-2200 survives and is slightly thinner, but it is more than twice as dense, so the wall
+is the heaviest. FRCI-12 stays under its limit at 19.8 kg/m², 8 kg/m² lighter than LI-2200. For
+this entry it is the tile to fly.
 
 ## Limitations and next steps
 
