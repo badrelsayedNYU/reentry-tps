@@ -69,10 +69,12 @@ class Material:
     cp: object          # specific heat [J/(kg K)], Constant or Table
     emissivity: float = None
     source: str = ""
+    max_use_temperature: float = None   # K
 
     @classmethod
-    def from_values(cls, name, rho, k, cp, emissivity=None, source=""):
-        return cls(name, float(rho), make_property(k), make_property(cp), emissivity, source)
+    def from_values(cls, name, rho, k, cp, emissivity=None, source="", max_use_temperature=None):
+        return cls(name, float(rho), make_property(k), make_property(cp), emissivity, source,
+                   max_use_temperature)
 
     def enthalpy(self, T):
         """Specific enthalpy e(T) = integral_0^T c_p dT' [J/kg] (exact for the tabulated c_p)."""
@@ -91,17 +93,27 @@ def _todos(node, path=""):
     return [path] if isinstance(node, str) and node.strip().upper().startswith("TODO") else []
 
 
-def _prop(spec):
+# Unit conversions for entries transcribed in the source's own units (exact, IT Btu):
+#   T: R -> K, k: Btu/(ft h R) -> W/(m K), c_p: Btu/(lbm R) -> J/(kg K), rho: lbm/ft^3 -> kg/m^3
+UNITS = {
+    "si": dict(T=1.0, k=1.0, cp=1.0, rho=1.0),
+    "english": dict(T=1.0 / 1.8, k=1.730734666, cp=4186.8, rho=16.01846337),
+}
+
+
+def _prop(spec, fT, fv):
     if isinstance(spec, dict):
-        return make_property((spec["T"], spec["value"]))
-    return make_property(spec)
+        return make_property((np.asarray(spec["T"], float) * fT, np.asarray(spec["value"], float) * fv))
+    return make_property(float(spec) * fv)
 
 
 def load_materials(path, require=None):
-    """Read the materials file. Returns (materials: dict name -> Material, entries: raw dicts, limits).
+    """Read the materials file. Returns (materials: dict key -> Material (SI), raw data dict).
 
-    Refuses to return anything if a required entry (or, by default, any entry) still holds a TODO:
-    material property values are never guessed (spec ground rules).
+    Entries may be written in their source's units (`units: english`) so every number can be checked
+    against the printed table; conversion to SI happens here. Refuses to return anything if a
+    required entry (or, by default, anything in the file) still holds a TODO: material property
+    values are never guessed (spec ground rules).
     """
     import yaml
 
@@ -111,12 +123,16 @@ def load_materials(path, require=None):
     scope = {k: data["materials"][k] for k in keys}
     missing = _todos(scope, "materials")
     if require is None:
-        missing += _todos(data.get("limits", {}), "limits")
+        for section in ("limits", "wall"):
+            missing += _todos(data.get(section, {}), section)
     if missing:
         raise MissingDataError("data/materials.yaml has values still to be supplied (with a source): "
                                + ", ".join(missing))
     materials = {}
     for key, e in scope.items():
-        materials[key] = Material(e["name"], float(e["rho"]), _prop(e["k"]), _prop(e["cp"]),
-                                  e.get("emissivity"), e["source"])
-    return materials, scope, data.get("limits", {})
+        f = UNITS[e.get("units", "si")]
+        t_max = e.get("max_use_temperature")
+        materials[key] = Material(e["name"], float(e["rho"]) * f["rho"], _prop(e["k"], f["T"], f["k"]),
+                                  _prop(e["cp"], f["T"], f["cp"]), e.get("emissivity"), e["source"],
+                                  None if t_max is None else float(t_max) * f["T"])
+    return materials, data

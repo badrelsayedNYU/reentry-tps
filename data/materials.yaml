@@ -1,57 +1,111 @@
-# Material properties for the heat-shield wall. EVERY value must come with a source
-# (e.g. NASA TPSX database, manufacturer data sheet, or a published paper).
+# Material properties for the heat-shield wall. EVERY value carries a source.
 #
-# Format
-#   rho:        density [kg/m^3]
-#   k, cp:      a single number, or a temperature table:
-#                 k: {T: [300, 600, 1200], value: [0.05, 0.07, 0.12]}   # T in K, k in W/(m K)
-#                 cp: {T: [...], value: [...]}                          # J/(kg K)
-#   emissivity: total hemispherical emissivity of the outer surface (heat-shield materials)
-#   max_use_temperature: reuse/single-use surface limit [K] (heat-shield materials)
-#   source:     citation for the values in this entry
+# Main source:
+#   Williams, S. D.; Curry, D. M.: Thermal Protection Materials - Thermophysical Property Data,
+#   NASA RP-1289, December 1992 (NTRS 19930009576). Page numbers below are RP-1289's printed
+#   page labels (e.g. 15-3). RP-1289 in turn cites the Space Shuttle Program Thermodynamic Design
+#   Data Book, SD73-SH-0226 (Rockwell, 1981) and the AFE Aerobrake Thermal Design Data Book,
+#   JSC-23571 (NASA/JSC, 1989).
+#
+# Values are transcribed exactly as printed, in the source's units (`units: english`):
+#   T [R], k [Btu/(ft hr R)], cp [Btu/(lbm R)], rho [lbm/ft^3], max_use_temperature [R].
+# The loader (src/tps/materials.py) converts to SI.
+#
+# Tile conductivity depends on gas pressure in the pores. The 1.0 atm through-the-thickness
+# (perpendicular) column is used: it is the highest conductivity in each table, hence conservative
+# for the bondline, and the bondline peaks during soak-back when the vehicle is low in the
+# atmosphere. (A pressure-dependent k(T, p) is a possible extension.)
 #
 # Any value left as TODO stops the analysis with a list of what is missing; nothing is guessed.
 
 materials:
-  shield_1:
-    name: "TODO: heat-shield material 1"
+  li900:
+    name: "LI-900 silica tile (RCG coated)"
     role: heat_shield
-    rho: TODO
-    k: TODO
-    cp: TODO
-    emissivity: TODO
-    max_use_temperature: TODO
-    source: "TODO: source"
+    units: english
+    rho: 9.0                                      # p. 15-3
+    k:                                            # p. 15-3, perpendicular, 1.0 atm column
+      T:     [210, 460, 710, 960, 1210, 1460, 1710, 1960, 2210, 2460, 2760, 2960, 3260, 3460]
+      value: [0.0233, 0.0275, 0.0341, 0.0433, 0.0534, 0.0658, 0.0782, 0.0942, 0.1130, 0.1360,
+              0.1670, 0.1940, 0.2420, 0.2900]
+    cp:                                           # p. 15-4
+      T:     [210, 310, 460, 710, 960, 1210, 1460, 1710, 1960, 2160, 2210, 2460, 3460]
+      value: [0.070, 0.105, 0.150, 0.210, 0.252, 0.275, 0.288, 0.296, 0.300, 0.302, 0.303, 0.303, 0.303]
+    emissivity: 0.85                              # RCG coating, black coated, p. 18-1
+    max_use_temperature: 2760                     # p. 15-3
+    source: "NASA RP-1289 pp. 15-3, 15-4 (from SD73-SH-0226); emissivity: RCG coating p. 18-1"
 
-  shield_2:
-    name: "TODO: heat-shield material 2"
+  li2200:
+    name: "LI-2200 silica tile (RCG coated)"
     role: heat_shield
-    rho: TODO
-    k: TODO
-    cp: TODO
-    emissivity: TODO
-    max_use_temperature: TODO
-    source: "TODO: source"
+    units: english
+    rho: 22.0                                     # p. 15-8
+    k:                                            # p. 15-8, perpendicular, 1.0 atm column
+      T:     [210, 460, 710, 960, 1210, 1460, 1710, 1960, 2210, 2460, 2760, 2960, 3260, 3460]
+      value: [0.032, 0.043, 0.054, 0.065, 0.076, 0.088, 0.104, 0.119, 0.139, 0.160, 0.189, 0.212,
+              0.250, 0.280]
+    cp:                                           # p. 15-9
+      T:     [210, 310, 460, 710, 960, 1210, 1460, 1710, 1960, 2160, 2210, 2460, 3460]
+      value: [0.070, 0.105, 0.150, 0.210, 0.252, 0.275, 0.288, 0.296, 0.300, 0.302, 0.303, 0.303, 0.303]
+    emissivity: 0.85                              # RCG coating, black coated, p. 18-1
+    max_use_temperature: 3160                     # p. 15-8
+    source: "NASA RP-1289 pp. 15-8, 15-9 (from SD73-SH-0226, JSC-23571); emissivity: RCG coating p. 18-1"
 
-  bondline:
-    name: "TODO: adhesive"
+  frci12:
+    name: "FRCI-12 fibrous refractory composite insulation (RCG coated)"
+    role: heat_shield
+    units: english
+    rho: 12.0                                     # p. 15-5
+    k:                                            # p. 15-5, perpendicular, 1 atm column
+      T:     [290, 535, 960, 1360, 1760, 2160, 2760]
+      value: [0.0208, 0.0306, 0.0504, 0.0712, 0.0981, 0.1320, 0.1900]
+    cp:                                           # p. 15-5
+      T:     [210, 310, 460, 710, 960, 1210, 1460, 1710, 1960, 2160, 2210, 2460, 3460]
+      value: [0.070, 0.105, 0.150, 0.210, 0.252, 0.275, 0.288, 0.296, 0.300, 0.302, 0.303, 0.303, 0.303]
+    emissivity: 0.85                              # RCG coating, black coated, p. 18-1
+    max_use_temperature: 3160                     # p. 15-5
+    source: "NASA RP-1289 p. 15-5 (from JSC-23571); emissivity: RCG coating p. 18-1"
+
+  rtv560:
+    name: "RTV-560 silicone adhesive"
     role: bondline
-    rho: TODO
-    k: TODO
-    cp: TODO
-    thickness: TODO        # m
-    source: "TODO: source"
+    units: english
+    rho: 88.0                                     # p. 17-1
+    k:                                            # p. 17-1
+      T:     [260, 360, 460, 660, 860, 960]
+      value: [0.233, 0.250, 0.245, 0.200, 0.163, 0.146]
+    cp:                                           # p. 17-1
+      T:     [320, 360, 410, 460, 560, 660, 860]
+      value: [0.273, 0.270, 0.260, 0.265, 0.285, 0.300, 0.340]
+    max_use_temperature: 1010                     # p. 17-1
+    source: "NASA RP-1289 p. 17-1 (from SD73-SH-0226)"
 
-  structure:
-    name: "TODO: substructure (e.g. aluminium or composite skin)"
+  al2219:
+    # 2219 rather than 2024 (p. 19-1): the 2024 c_p table prints 0.177 at 160 R between 0.088 and
+    # 0.147, an evident misprint; 2219 has no such entry.
+    name: "Aluminium 2219-T8XX structure"
     role: structure
-    rho: TODO
-    k: TODO
-    cp: TODO
-    thickness: TODO        # m
-    source: "TODO: source"
+    units: english
+    rho: 175.6                                    # p. 19-2
+    k:                                            # p. 19-2
+      T:     [40, 110, 160, 260, 360, 460, 560, 660, 760, 960, 1060, 1260]
+      value: [13.0, 31.0, 39.0, 52.5, 61.5, 69.0, 74.0, 78.0, 82.0, 87.0, 89.4, 92.0]
+    cp:                                           # p. 19-2
+      T:     [535, 660, 760, 860, 960]
+      value: [0.206, 0.215, 0.222, 0.228, 0.234]
+    max_use_temperature: 810                      # p. 19-2
+    source: "NASA RP-1289 p. 19-2 (from SD73-SH-0226)"
 
 limits:
+  # The bondline sits directly on the aluminium, which is the lower of the two printed maximum
+  # temperatures: RTV-560 1010 R (p. 17-1), aluminium 2219 810 R = 450 K (p. 19-2).
+  # TO CONFIRM by the owner: which one governs T_limit, and the sizing margin.
   bondline_temperature_limit: TODO   # K
   margin: TODO                       # K below the limit used for sizing
+  source: "TODO: source / owner decision"
+
+wall:
+  # Layer thicknesses are design inputs, not in RP-1289.
+  bondline_thickness: TODO   # m
+  structure_thickness: TODO  # m
   source: "TODO: source"
