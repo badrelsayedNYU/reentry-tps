@@ -53,6 +53,8 @@ input[type="range"] { width: 100%; accent-color: var(--heat); }
 .hint { color: var(--muted); font-size: 0.82rem; margin: 8px 0 0; }
 :focus-visible { outline: 2px solid var(--cool); outline-offset: 2px; }
 .main { display: grid; gap: 14px; min-width: 0; }
+.sizing-results { display: grid; gap: 14px; min-width: 0; }
+.sizing-results[hidden] { display: none; }
 .status { display: flex; align-items: center; gap: 10px; font-size: 0.9rem; min-height: 24px; }
 .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--ok); flex: none; }
 .status.busy .dot { background: var(--heat); animation: pulse 1s infinite; }
@@ -123,6 +125,7 @@ footer { color: var(--muted); font-size: 0.82rem; max-width: 82ch; }
 
     <main class="main">
       <div class="status" id="status"><span class="dot"></span><span id="statusText"></span></div>
+      <div class="sizing-results" id="sizing-results">
       <div class="tiles" id="tiles"></div>
 
       <section class="panel layup">
@@ -134,6 +137,7 @@ footer { color: var(--muted); font-size: 0.82rem; max-width: 82ch; }
         <canvas id="cTraj" aria-label="Altitude against velocity"></canvas>
         <canvas id="cQ" aria-label="Heat flux against time"></canvas>
         <div class="wide"><canvas id="cT" aria-label="Temperatures against time"></canvas></div>
+      </div>
       </div>
 
       <section class="panel">
@@ -367,12 +371,18 @@ const TPS = (() => {
   }
 
   function simulate(c, L, traj, opts = {}) {
-    let soak = opts.soak ?? 1800;
+    const initialSoak = opts.soak ?? 1800, maxSoak = opts.maxSoak ?? 4 * 3600;
+    if (!(Number.isFinite(initialSoak) && initialSoak > 0 && Number.isFinite(maxSoak) && maxSoak > 0)) {
+      throw new Error("Soak windows must be finite and positive.");
+    }
+    let soak = Math.min(initialSoak, maxSoak);
     while (true) {
       const r = runCoupled(traj, caseWall(c, L), { Rn: c.Rn, eps: MATERIALS[c.shield].eps, ...opts, soak });
-      if (opts.earlyStop) return r;
-      if (r.captured || soak >= 4 * 3600) return r;
-      soak = Math.min(2 * soak, 4 * 3600);
+      if (r.captured) return r;
+      if (soak >= maxSoak) {
+        throw new Error(`Bondline peak not confirmed after ${soak} s of soak-back for ${(L * 100).toFixed(2)} cm of ${MATERIALS[c.shield].name}. No sizing result is available; a longer cooling simulation is needed.`);
+      }
+      soak = Math.min(2 * soak, maxSoak);
     }
   }
 
@@ -380,9 +390,9 @@ const TPS = (() => {
   // Secant iteration on peak bondline temperature vs thickness (smooth and decreasing), then a bracket
   // check: the answer passes, and an answer tol thinner fails. So it is never too thin and at most tol
   // thicker than needed, the same guarantee as the Python sizing.
-  function size(c, traj, { lo = 0.002, hi = 0.25, tol = 1e-4, target = 430, guess = 0.06, onRun } = {}) {
+  function size(c, traj, { lo = 0.002, hi = 0.25, tol = 1e-4, target = 430, guess = 0.06, maxSoak = 4 * 3600, onRun } = {}) {
     let runs = 0;
-    const f = L => { runs++; onRun && onRun(runs, L); return simulate(c, L, traj, { keepEvery: 1e9, earlyStop: true, soak: 4 * 3600 }).peakTb - target; };
+    const f = L => { runs++; onRun && onRun(runs, L); return simulate(c, L, traj, { keepEvery: 1e9, earlyStop: true, soak: maxSoak, maxSoak }).peakTb - target; };
     let x0 = Math.min(Math.max(guess, lo), hi), x1 = Math.min(x0 * 1.25 + 0.005, hi);
     let f0 = f(x0), f1 = f(x1);
     for (let k = 0; k < 20 && Math.abs(x1 - x0) > tol / 4; k++) {
@@ -473,7 +483,11 @@ const TPS = (() => {
     worker.postMessage({ id, kind, p });
   }
 
-  function setStatus(kind, text) { $("status").className = "status " + (kind === "ok" ? "" : kind); $("statusText").textContent = text; }
+  function setStatus(kind, text) {
+    $("status").className = "status " + (kind === "ok" ? "" : kind);
+    $("statusText").textContent = text;
+    if (kind === "error") { $("sizing-results").hidden = true; clearCompare(); }
+  }
 
   // ---------- controls ----------
   const fields = [
@@ -507,6 +521,7 @@ const TPS = (() => {
 
   const fmt = (v, d = 1) => v.toFixed(d);
   function render() {
+    $("sizing-results").hidden = false;
     const c = current, r = c.res, M = TPS.MATERIALS[c.sh];
     const gPeak = Math.max(...c.traj.g), surfOk = r.peakTs <= M.maxT;
     $("tiles").innerHTML = [

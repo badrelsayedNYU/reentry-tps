@@ -49,6 +49,11 @@ the 1976 U.S. Standard Atmosphere (checked against the printed tables at six alt
   condition is Newton-linearized and iterated to 1e-6 K each step;
 - the run continues after heating ends (soak-back) until the bondline peak has passed.
 
+If the peak remains unconfirmed at the maximum soak time, sizing stops with an error rather than
+using an incomplete temperature maximum. The default maximum is four hours after heating ends;
+set `numerics.max_soak_time` (seconds) in the baseline YAML for cases needing a longer cooling run.
+The browser app applies the same check and reports when it cannot confirm a sizing result.
+
 **Sizing** (`src/tps/sizing.py`): Brent's method on the heat-shield thickness, such that the peak
 bondline temperature equals the limit minus a margin. The result is never thinner than needed and
 at most 0.1 mm thicker.
@@ -227,6 +232,7 @@ this entry it is the tile to fly.
 python -m venv .venv && source .venv/bin/activate
 pip install -e ".[dev]"
 pytest                          # validation suite
+node --test tests/test_browser.cjs  # browser model regression checks (Node.js 22+)
 python scripts/make_figures.py  # every figure and results table
 ```
 
