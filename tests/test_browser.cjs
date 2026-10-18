@@ -45,3 +45,45 @@ for (const [shield, expected] of [['li900', 0.0703], ['li2200', 0.0639], ['frci1
     assert.ok(result.peakTb <= 430.1);
   });
 }
+
+test('saved wall profiles align with time samples and wall interfaces', () => {
+  const r = TPS.simulate(c, 0.0703, trajectory, { saveProfiles: true, keepEvery: 50 });
+  assert.equal(r.hist.profiles.length, r.hist.t.length);
+  assert.equal(r.hist.depth.length, r.hist.profiles[0].length);
+  assert.equal(r.hist.depth[0], 0);
+  assert.ok(Math.abs(r.hist.depth.at(-1) - 0.0725) < 1e-10);
+  assert.ok(r.hist.profiles.every(p => p.every(Number.isFinite)));
+});
+
+test('advanced wall settings change the grid and mass rather than just labels', () => {
+  const custom = { ...c, shieldCells: 20, bondThickness: 0.001, skinThickness: 0.004 };
+  const wall = TPS.caseWall(custom, 0.07);
+  assert.equal(wall.N, 30);
+  assert.ok(Math.abs(wall.thickness - 0.075) < 1e-12);
+  assert.ok(TPS.arealMass(custom, 0.07) > TPS.arealMass(c, 0.07));
+});
+
+test('hot-wall correction reduces applied heating on the same fixed shield', () => {
+  const cold = TPS.simulate(c, 0.0703, trajectory, { earlyStop: true, soak: 14400 });
+  const hot = TPS.simulate({ ...c, hotWall: true }, 0.0703, trajectory, { earlyStop: true, soak: 14400 });
+  assert.ok(hot.peakQ < cold.peakQ);
+  assert.ok(hot.peakTs < cold.peakTs);
+  assert.ok(hot.peakTb < cold.peakTb);
+});
+
+test('parameter study computes separate cases and reports failed points', () => {
+  const rows = TPS.sweep({ ...c, V_E: 7800, gamma_E_deg: -1.5, beta: 400, LD: 0.3,
+    maxSoak: 1 }, 'Rn', [2, 4]);
+  assert.equal(rows.length, 2);
+  assert.ok(rows.every(row => row.error && row.thickness === undefined));
+  assert.throws(() => TPS.sweep(c, 'unknown', [1, 2]), /supported parameter/);
+  assert.throws(() => TPS.sweep(c, 'Rn', [0, 2]), /between/);
+});
+
+
+test('a nose-radius study confirms every peak and sizes thinner tiles at larger radius', () => {
+  const rows = TPS.sweep({ ...c, V_E: 7800, gamma_E_deg: -1.5, beta: 400, LD: 0.3 }, 'Rn', [2, 4]);
+  assert.ok(rows.every(row => !row.error && row.captured && row.peakTb <= 430.1));
+  assert.ok(rows[0].thickness > rows[1].thickness);
+  assert.ok(rows[0].peakQ > rows[1].peakQ);
+});

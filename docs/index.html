@@ -1,4 +1,6 @@
+<meta charset="utf-8">
 <title>Heat Shield Sizer</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600&family=Barlow+Semi+Condensed:wght@500;600;700&family=JetBrains+Mono:wght@400;500&display=swap">
@@ -44,6 +46,15 @@ a { color: var(--cool); }
 .field output { font-family: var(--font-mono); font-size: 0.82rem; font-variant-numeric: tabular-nums; }
 .field small { color: var(--muted); font-size: 0.78rem; }
 input[type="range"] { width: 100%; accent-color: var(--heat); }
+select, input[type="number"], input[type="text"] { width:100%; box-sizing:border-box; padding:7px; background:var(--surface); color:var(--ink); border:1px solid var(--rule); border-radius:4px; }
+details summary { cursor:pointer; font-weight:600; }
+.validation img { max-width:100%; height:auto; background:white; }
+.validation figure { margin:16px 0; }
+.validation figcaption { font-size:0.84rem; color:var(--muted); }
+#cProfile { height:300px; }
+.study-charts { display:grid; grid-template-columns:repeat(auto-fit,minmax(260px,1fr)); gap:12px; }
+.study-charts canvas { height:260px; }
+
 .chips { display: flex; flex-wrap: wrap; gap: 6px; }
 .chip { font: 500 0.86rem var(--font-body); border: 1px solid transparent; background: var(--chip); color: var(--ink); padding: 5px 10px; border-radius: 4px; cursor: pointer; }
 .chip[aria-pressed="true"] { background: var(--ink); color: var(--surface); }
@@ -75,6 +86,7 @@ input[type="range"] { width: 100%; accent-color: var(--heat); }
 .layup { display: grid; gap: 6px; }
 #layup { height: 76px; }
 canvas { display: block; width: 100%; }
+[hidden] { display: none !important; }
 .charts { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
 .charts .wide { grid-column: 1 / -1; }
 @media (max-width: 640px) { .charts { grid-template-columns: minmax(0, 1fr); } }
@@ -116,11 +128,23 @@ footer { color: var(--muted); font-size: 0.82rem; max-width: 82ch; }
       <section class="panel">
         <p class="label">Heat-shield tile</p>
         <div class="chips" id="mats"></div>
-        <p class="hint">Bond: 0.2 mm RTV-560. Structure: 2 mm aluminium 2219. Sized so the bondline peaks at 430 K, 20 K under the aluminium limit of 450 K.</p>
+        <p class="hint">Default wall: 0.2 mm RTV-560 and 2 mm aluminium 2219. Advanced controls below can override the layup. Sized so the bondline peaks at 430 K, 20 K under the aluminium limit of 450 K.</p>
         <div class="row" style="display:flex;gap:8px;margin-top:12px;flex-wrap:wrap">
           <button class="btn ghost" id="reset" type="button">Reset to baseline</button>
         </div>
       </section>
+      <details class="panel">
+        <summary>Advanced wall &amp; heating controls</summary>
+        <div class="field"><label for="bondMm">RTV-560 bond thickness (mm)</label><input id="bondMm" type="number" required min="0.1" max="2" step="0.1" value="0.2"></div>
+        <div class="field"><label for="skinMm">Al 2219 skin thickness (mm)</label><input id="skinMm" type="number" required min="0.5" max="5" step="0.5" value="2"></div>
+        <div class="field"><label for="initialK">Initial wall temperature (K)</label><input id="initialK" type="number" required min="250" max="400" step="5" value="295"></div>
+        <div class="field"><label for="cells">Tile cells</label><select id="cells"><option>20</option><option>40</option><option selected>60</option><option>80</option><option>120</option></select></div>
+        <div class="field"><label for="timeStep">Conduction time step (s)</label><select id="timeStep"><option>0.25</option><option selected>0.5</option><option>1</option><option>2</option></select></div>
+        <div class="field"><label for="maxHours">Maximum soak after heating (hours)</label><select id="maxHours"><option>1</option><option>2</option><option selected>4</option><option>8</option><option>12</option></select></div>
+        <label><input id="hotWall" type="checkbox"> Apply hot-wall enthalpy correction</label>
+        <p class="hint">Hot-wall heating uses q(1 − cₚTwall/h₀). Numerical controls change discretization; use the refinement study to judge accuracy. Finer settings take longer.</p>
+        <button class="btn" id="applyAdvanced" type="button">Apply advanced settings</button>
+      </details>
     </aside>
 
     <main class="main">
@@ -138,6 +162,13 @@ footer { color: var(--muted); font-size: 0.82rem; max-width: 82ch; }
         <canvas id="cQ" aria-label="Heat flux against time"></canvas>
         <div class="wide"><canvas id="cT" aria-label="Temperatures against time"></canvas></div>
       </div>
+      <section class="panel">
+        <p class="label">Temperature through the wall</p>
+        <button class="btn" id="profiles" type="button">Compute temperature profiles</button>
+        <p class="hint" id="profileNote">Compute the current case to inspect the temperature at each depth and time. The baseline cards above are a stored reference.</p>
+        <label for="profileTime">Time through entry and cooling</label><input id="profileTime" type="range" min="0" max="0" value="0" disabled>
+        <canvas id="cProfile" aria-label="Temperature versus depth through the wall" hidden></canvas>
+      </section>
       </div>
 
       <section class="panel">
@@ -154,8 +185,24 @@ footer { color: var(--muted); font-size: 0.82rem; max-width: 82ch; }
         <p class="hint">Areal mass includes all three layers. The lightest tile that passes its own surface limit is in bold.</p>
       </section>
 
+      <section class="panel">
+        <p class="label">Parameter study</p>
+        <p class="hint">Re-size the selected tile at each value while keeping all other inputs and advanced settings fixed. Each point is a new coupled simulation; failed points are reported, not interpolated.</p>
+        <div class="field"><label for="sweepKey">Parameter to vary</label><select id="sweepKey"><option value="V_E">Entry speed (m/s)</option><option value="gamma_E_deg">Entry angle (deg)</option><option value="beta">Ballistic coefficient (kg/m²)</option><option value="Rn">Nose radius (m)</option><option value="LD">Lift-to-drag ratio</option></select></div>
+        <div class="field"><label for="sweepValues">Values (comma-separated, 2–7 points)</label><input id="sweepValues" type="text" value="7200, 7400, 7600, 7800, 8000"></div>
+        <button class="btn" id="runSweep" type="button">Run parameter study</button>
+        <div id="sweepResults" hidden><p id="sweepCaption" class="hint"></p><div class="study-charts"><canvas id="cSweepL" aria-label="Sized tile thickness against parameter"></canvas><canvas id="cSweepMass" aria-label="Wall areal mass against parameter"></canvas></div><div class="table-wrap"><table><thead><tr><th>Value</th><th>Thickness (cm)</th><th>Mass (kg/m²)</th><th>Surface</th><th>Status</th></tr></thead><tbody id="sweepRows"></tbody></table></div><a id="sweepDownload" download="heat_shield_study.csv">Download study CSV</a></div>
+      </section>
+      <details class="panel validation">
+        <summary>Validation &amp; numerical convergence</summary>
+        <p>These are fixed reference studies from the Python repository, not a recomputation for the current slider settings. The live browser model is also checked against the published baseline for all three tiles in automated tests.</p>
+        <figure><img src="assets/validation_conduction.png" alt="Conduction solver compared with analytical semi-infinite and finite-wall solutions" loading="lazy"><figcaption>Conduction verification against analytical solutions; see the repo’s conduction and energy tests for tolerances.</figcaption></figure>
+        <figure><img src="assets/validation_allen_eggers.png" alt="Entry trajectory compared with the Allen–Eggers analytical ballistic solution" loading="lazy"><figcaption>Allen–Eggers comparison: the analytical reference assumes constant entry angle and neglects gravity; full-physics differences are expected.</figcaption></figure>
+        <figure><img src="assets/convergence.png" alt="Baseline bondline temperature convergence with cell count and time step" loading="lazy"><figcaption>Baseline refinement study: second order in cell size and first order in time for backward Euler. This supports the default 60-cell stretched grid and 0.5 s step.</figcaption></figure>
+        <p><a href="https://github.com/badrelsayedNYU/reentry-tps/blob/main/results/convergence.md">Numerical convergence table</a> · <a href="https://github.com/badrelsayedNYU/reentry-tps/actions">Automated validation checks</a></p>
+      </details>
       <footer>
-        Model: planar point-mass trajectory over a spherical, non-rotating Earth with an exponential atmosphere (ρ₀ = 1.225 kg/m³, H = 7.2 km), integrated from 120 km to 500 m/s. Sutton–Graves cold-wall stagnation heating with surface re-radiation (ε = 0.85). Implicit finite-volume conduction with temperature-dependent properties from NASA RP-1289, adiabatic back face, soak-back until the bondline peaks. Valid for non-ablating tiles below about 10 km/s; stagnation point only. This page is a JavaScript port of the Python model and reproduces its baseline (7.03 cm of LI-900, 43.7 W/cm², 129 MJ/m², bondline peak at 3464 s) and its parameter sweeps. Built by Badr Elsayed.
+        Model: planar point-mass trajectory over a spherical, non-rotating Earth with an exponential atmosphere (ρ₀ = 1.225 kg/m³, H = 7.2 km), integrated from 120 km to 500 m/s. Sutton–Graves stagnation heating (cold-wall by default, optional hot-wall correction) with surface re-radiation (ε = 0.85). Implicit finite-volume conduction with temperature-dependent properties from NASA RP-1289, adiabatic back face, soak-back until the bondline peaks. Valid for non-ablating tiles below about 10 km/s; stagnation point only. This page is a JavaScript port of the Python model and reproduces its baseline (7.03 cm of LI-900, 43.7 W/cm², 129 MJ/m², bondline peak at 3464 s) and its parameter sweeps. Built by Badr Elsayed.
       </footer>
     </main>
   </div>
@@ -282,12 +329,15 @@ const TPS = (() => {
   }
 
   // ---------- coupled run: backward Euler, Picard on k, Newton on e(T) and surface flux ----------
-  function runCoupled(traj, wall, { Rn, eps, T0 = 295, dt = 0.5, soak = 1800, keepEvery = 10, earlyStop = false }) {
+  function runCoupled(traj, wall, { Rn, eps, T0 = 295, dt = 0.5, soak = 1800, keepEvery = 10, earlyStop = false, hotWall = false, saveProfiles = false }) {
     const N = wall.N, M = N + 2, { dx, rho, mat } = wall;
     const qTraj = new Float64Array(traj.t.length);
     for (let i = 0; i < qTraj.length; i++) qTraj[i] = K_SG * Math.sqrt(traj.rho[i] / Rn) * traj.V[i] ** 3;
     const tHeat = traj.t[traj.t.length - 1], tEnd = tHeat + soak;
-    const qAt = t => interp(t, traj.t, qTraj, 0), TinfAt = t => interp(t, traj.t, traj.Tinf);
+    const TinfAt = t => interp(t, traj.t, traj.Tinf);
+    const h0Traj = Float64Array.from(traj.V, (V, i) => 1004.5 * traj.Tinf[i] + 0.5 * V * V);
+    const coldAt = t => interp(t, traj.t, qTraj, 0), h0At = t => interp(t, traj.t, h0Traj);
+    const qAt = (t, Ts) => coldAt(t) * (hotWall ? 1 - 1004.5 * Ts / h0At(t) : 1);
 
     const kc = new Float64Array(N), g = new Float64Array(N + 1); // g[0]=front, g[1..N-1]=interior, g[N]=back
     const cond = (u) => {
@@ -305,7 +355,8 @@ const TPS = (() => {
       for (let i = M - 2; i >= 0; i--) out[i] = dp_[i] - cp_[i] * out[i + 1];
     }
     const frontRow = (t, Ts, gf) => { // q(T) - g (Ts - T1) = 0, linearized
-      const q0 = qAt(t) - eps * SIGMA * (Ts ** 4 - TinfAt(t) ** 4), dq = -4 * eps * SIGMA * Ts ** 3;
+      const q0 = qAt(t, Ts) - eps * SIGMA * (Ts ** 4 - TinfAt(t) ** 4);
+      const dq = (hotWall ? -coldAt(t) * 1004.5 / h0At(t) : 0) - 4 * eps * SIGMA * Ts ** 3;
       return [dq - gf, gf, -q0 + dq * Ts];
     };
 
@@ -317,10 +368,10 @@ const TPS = (() => {
     const nS = wall.layers[0].n, xb = wall.bondDepth, wA = (xb - wall.x[nS - 1]) / (wall.x[nS] - wall.x[nS - 1]);
     const Tbond = u_ => u_[nS] + wA * (u_[nS + 1] - u_[nS]);
 
-    const hist = { t: [0], Ts: [u[0]], Tb: [Tbond(u)], Tback: [u[M - 1]], q: [qAt(0)], qrad: [eps * SIGMA * (u[0] ** 4 - TinfAt(0) ** 4)] };
-    let peakTs = u[0], tPeakTs = 0, peakTb = Tbond(u), tPeakTb = 0, peakQ = qAt(0), tPeakQ = 0, load = 0, qPrev = qAt(0);
-    let lastTb = peakTb, profiles = [], nextProfile = 0;
-    const profileTimes = [];
+    const hist = { t: [0], Ts: [u[0]], Tb: [Tbond(u)], Tback: [u[M - 1]], q: [qAt(0, u[0])], qrad: [eps * SIGMA * (u[0] ** 4 - TinfAt(0) ** 4)] };
+    let peakTs = u[0], tPeakTs = 0, peakTb = Tbond(u), tPeakTb = 0, peakQ = qAt(0, u[0]), tPeakQ = 0, load = 0, qPrev = qAt(0, u[0]);
+    let lastTb = peakTb;
+    if (saveProfiles) { hist.depth = [0, ...wall.x, wall.thickness]; hist.profiles = [Array.from(u)]; }
     const eOld = new Float64Array(N), uStar = new Float64Array(M), uNew = new Float64Array(M);
     let t = 0, step = 0;
     while (t < tEnd - 1e-12 * Math.max(1, tEnd)) {
@@ -345,7 +396,7 @@ const TPS = (() => {
       }
       if (it >= 50) throw new Error("The conduction solver did not converge at t = " + tn.toFixed(1) + " s.");
       u.set(uStar); t = tn; step++;
-      const q = qAt(t), tb = Tbond(u);
+      const q = qAt(t, u[0]), tb = Tbond(u);
       load += 0.5 * (q + qPrev) * h; qPrev = q;
       if (q > peakQ) { peakQ = q; tPeakQ = t; }
       if (u[0] > peakTs) { peakTs = u[0]; tPeakTs = t; }
@@ -356,6 +407,7 @@ const TPS = (() => {
       if (step % keepEvery === 0 || t >= tEnd - 1e-9) {
         hist.t.push(t); hist.Ts.push(u[0]); hist.Tb.push(tb); hist.Tback.push(u[M - 1]); hist.q.push(q);
         hist.qrad.push(eps * SIGMA * (u[0] ** 4 - TinfAt(t) ** 4));
+        if (saveProfiles) hist.profiles.push(Array.from(u));
       }
     }
     const captured = tPeakTb < t - 1e-9 && lastTb < peakTb - 1e-6;
@@ -364,20 +416,21 @@ const TPS = (() => {
 
   function caseWall(c, L) {
     return makeWall([
-      { material: MATERIALS[c.shield], thickness: L, n: 60, stretch: 1.05 },
-      { material: MATERIALS.rtv560, thickness: 0.0002, n: 4 },
-      { material: MATERIALS.al2219, thickness: 0.002, n: 6 },
+      { material: MATERIALS[c.shield], thickness: L, n: c.shieldCells ?? 60, stretch: 1.05 },
+      { material: MATERIALS.rtv560, thickness: c.bondThickness ?? 0.0002, n: 4 },
+      { material: MATERIALS.al2219, thickness: c.skinThickness ?? 0.002, n: 6 },
     ]);
   }
 
   function simulate(c, L, traj, opts = {}) {
-    const initialSoak = opts.soak ?? 1800, maxSoak = opts.maxSoak ?? 4 * 3600;
+    const initialSoak = opts.soak ?? 1800, maxSoak = opts.maxSoak ?? c.maxSoak ?? 4 * 3600;
     if (!(Number.isFinite(initialSoak) && initialSoak > 0 && Number.isFinite(maxSoak) && maxSoak > 0)) {
       throw new Error("Soak windows must be finite and positive.");
     }
     let soak = Math.min(initialSoak, maxSoak);
     while (true) {
-      const r = runCoupled(traj, caseWall(c, L), { Rn: c.Rn, eps: MATERIALS[c.shield].eps, ...opts, soak });
+      const r = runCoupled(traj, caseWall(c, L), { Rn: c.Rn, eps: MATERIALS[c.shield].eps, T0: c.T0 ?? 295, dt: c.dt ?? 0.5,
+        hotWall: c.hotWall ?? false, ...opts, soak });
       if (r.captured) return r;
       if (soak >= maxSoak) {
         throw new Error(`Bondline peak not confirmed after ${soak} s of soak-back for ${(L * 100).toFixed(2)} cm of ${MATERIALS[c.shield].name}. No sizing result is available; a longer cooling simulation is needed.`);
@@ -390,7 +443,7 @@ const TPS = (() => {
   // Secant iteration on peak bondline temperature vs thickness (smooth and decreasing), then a bracket
   // check: the answer passes, and an answer tol thinner fails. So it is never too thin and at most tol
   // thicker than needed, the same guarantee as the Python sizing.
-  function size(c, traj, { lo = 0.002, hi = 0.25, tol = 1e-4, target = 430, guess = 0.06, maxSoak = 4 * 3600, onRun } = {}) {
+  function size(c, traj, { lo = 0.002, hi = 0.25, tol = 1e-4, target = 430, guess = 0.06, maxSoak = c.maxSoak ?? 4 * 3600, onRun } = {}) {
     let runs = 0;
     const f = L => { runs++; onRun && onRun(runs, L); return simulate(c, L, traj, { keepEvery: 1e9, earlyStop: true, soak: maxSoak, maxSoak }).peakTb - target; };
     let x0 = Math.min(Math.max(guess, lo), hi), x1 = Math.min(x0 * 1.25 + 0.005, hi);
@@ -409,9 +462,25 @@ const TPS = (() => {
     return { thickness: up, runs };
   }
 
-  function arealMass(c, L) { return MATERIALS[c.shield].rho * L + MATERIALS.rtv560.rho * 0.0002 + MATERIALS.al2219.rho * 0.002; }
+  function arealMass(c, L) { return MATERIALS[c.shield].rho * L + MATERIALS.rtv560.rho * (c.bondThickness ?? 0.0002) + MATERIALS.al2219.rho * (c.skinThickness ?? 0.002); }
 
-  return { MATERIALS, fly, simulate, size, arealMass, tempUS76, caseWall };
+  const STUDY_BOUNDS = { V_E: [6000, 9000], gamma_E_deg: [-8, -0.5], beta: [100, 1000], Rn: [0.5, 8], LD: [0, 0.5] };
+  function sweep(p, key, values, onPoint) {
+    if (!Object.hasOwn(STUDY_BOUNDS, key) || !Array.isArray(values) || values.length < 2 || values.length > 7) throw new Error("Choose a supported parameter and 2–7 values.");
+    const [lo, hi] = STUDY_BOUNDS[key];
+    if (values.some(v => !Number.isFinite(v) || v < lo || v > hi)) throw new Error(`Study values must be between ${lo} and ${hi}.`);
+    return values.map(value => {
+      onPoint && onPoint(value);
+      try {
+        const c = { ...p, [key]: value }, tr = fly(c), sized = size(c, tr);
+        if (!sized.thickness) return { value, error: "Requires more than 25 cm" };
+        const r = simulate(c, sized.thickness, tr, { earlyStop: true, keepEvery: 1e9, soak: c.maxSoak ?? 14400 });
+        return { value, thickness: sized.thickness, mass: arealMass(c, sized.thickness), peakTs: r.peakTs,
+          peakTb: r.peakTb, peakQ: r.peakQ, captured: r.captured, surfaceOk: r.peakTs <= MATERIALS[c.shield].maxT };
+      } catch (err) { return { value, error: err.message }; }
+    });
+  }
+  return { MATERIALS, fly, simulate, size, arealMass, tempUS76, caseWall, sweep };
 })();
 
 
@@ -431,15 +500,19 @@ const TPS = (() => {
     onmessage = (e) => {
       const { id, kind, p } = e.data;
       try {
+        if (kind === "sweep") {
+          const rows = TPS.sweep(p, p.sweepKey, p.sweepValues, value => postMessage({ id, studyProgress: value }));
+          postMessage({ id, done: { rows } }); return;
+        }
         const tr = TPS.fly(p);
         const shields = kind === "compare" ? ["li900", "li2200", "frci12"] : [p.shield];
         const out = [];
         for (const sh of shields) {
-          const c = { shield: sh, Rn: p.Rn };
+          const c = { ...p, shield: sh };
           const s = TPS.size(c, tr, { guess: last[sh], onRun: (n, L) => postMessage({ id, progress: { sh, n, L } }) });
           if (!s.thickness) { out.push({ sh, tooThick: true }); continue; }
           last[sh] = s.thickness;
-          const r = TPS.simulate(c, s.thickness, tr, { keepEvery: kind === "compare" ? 1e9 : 10 });
+          const r = TPS.simulate(c, s.thickness, tr, { keepEvery: kind === "compare" ? 1e9 : 10, saveProfiles: kind !== "compare" });
           out.push({ sh, thickness: s.thickness, runs: s.runs, mass: TPS.arealMass(c, s.thickness),
             res: { peakQ: r.peakQ, tPeakQ: r.tPeakQ, load: r.load, peakTs: r.peakTs, tPeakTs: r.tPeakTs, peakTb: r.peakTb, tPeakTb: r.tPeakTb, tHeat: r.tHeat, tEnd: r.tEnd, hist: kind === "compare" ? null : r.hist } });
         }
@@ -452,14 +525,19 @@ const TPS = (() => {
   let reqId = 0, pending = null, busy = false;
 
   function request(kind) {
-    const p = { V_E: state.V_E, gamma_E_deg: state.gamma_E_deg, beta: state.beta, LD: state.LD, Rn: state.Rn, shield: state.shield };
+    const p = { ...state };
+    if (kind === "sweep") {
+      p.sweepKey = $("sweepKey").value;
+      p.sweepValues = $("sweepValues").value.split(",").map(v => v.trim() ? Number(v) : NaN);
+    }
     if (busy) { pending = kind; return; }
     busy = true; const id = ++reqId;
     setStatus("busy", kind === "compare" ? "Sizing all three tiles…" : "Sizing the shield…");
-    $("compare").disabled = true;
+    $("compare").disabled = true; $("runSweep").disabled = true; $("profiles").disabled = true; $("reset").disabled = true; $("applyAdvanced").disabled = true;
     const finish = msg => {
-      busy = false; $("compare").disabled = false;
+      busy = false; $("compare").disabled = false; $("runSweep").disabled = false; $("profiles").disabled = false; $("reset").disabled = false; $("applyAdvanced").disabled = false;
       if (msg.error) setStatus("error", msg.error);
+      else if (kind === "sweep") showSweep(msg.done, p);
       else if (kind === "compare") showCompare(msg.done, p);
       else { current = { params: p, ...msg.done.out[0], traj: msg.done.traj }; if (current.tooThick) setStatus("error", "Even 25 cm of this tile cannot keep the bondline under 430 K for this entry."); else { render(); clearCompare(); } }
       if (pending) { const k = pending; pending = null; request(k); }
@@ -467,9 +545,10 @@ const TPS = (() => {
     if (!worker) { // fallback: run on the main thread
       setTimeout(() => {
         try {
+          if (kind === "sweep") { finish({ done: { rows: TPS.sweep(p, p.sweepKey, p.sweepValues) } }); return; }
           const tr = TPS.fly(p), shields = kind === "compare" ? MATS : [p.shield], out = [];
-          for (const sh of shields) { const c = { shield: sh, Rn: p.Rn }, s = TPS.size(c, tr); if (!s.thickness) { out.push({ sh, tooThick: true }); continue; }
-            const r = TPS.simulate(c, s.thickness, tr); out.push({ sh, thickness: s.thickness, runs: s.runs, mass: TPS.arealMass(c, s.thickness), res: r }); }
+          for (const sh of shields) { const c = { ...p, shield: sh }, s = TPS.size(c, tr); if (!s.thickness) { out.push({ sh, tooThick: true }); continue; }
+            const r = TPS.simulate(c, s.thickness, tr, { saveProfiles: kind !== "compare" }); out.push({ sh, thickness: s.thickness, runs: s.runs, mass: TPS.arealMass(c, s.thickness), res: r }); }
           finish({ done: { out, traj: { t: tr.t, V: tr.V, h: tr.h, g: tr.gload } } });
         } catch (err) { finish({ error: err.message }); }
       }, 30);
@@ -477,6 +556,7 @@ const TPS = (() => {
     }
     worker.onmessage = e => {
       if (e.data.id !== id) return;
+      if (e.data.studyProgress !== undefined) { setStatus("busy", "Sizing study point " + e.data.studyProgress + "…"); return; }
       if (e.data.progress) { const g = e.data.progress; setStatus("busy", `Sizing ${TPS.MATERIALS[g.sh].name}: run ${g.n}, trying ${(g.L * 100).toFixed(2)} cm`); return; }
       finish(e.data);
     };
@@ -507,10 +587,26 @@ const TPS = (() => {
     b.addEventListener("click", () => { state.shield = m; syncInputs(); request("size"); });
     mats.appendChild(b);
   }
-  $("reset").addEventListener("click", () => { Object.assign(state, DEF); syncInputs(); current = BASE_CURRENT; render(); clearCompare(); });
+  $("reset").addEventListener("click", () => { clearTimeout(timer); pending = null; for (const key of Object.keys(state)) delete state[key]; Object.assign(state, DEF); syncInputs(); current = BASE_CURRENT; render(); clearCompare(); });
   $("compare").addEventListener("click", () => request("compare"));
+  $("profiles").addEventListener("click", () => request("size"));
+  $("runSweep").addEventListener("click", () => request("sweep"));
+  $("profileTime").addEventListener("input", drawProfile);
+  $("sweepKey").addEventListener("change", () => {
+    $("sweepValues").value = { V_E: "7200, 7400, 7600, 7800, 8000", gamma_E_deg: "-0.9, -1.5, -3, -4.5", beta: "200, 400, 600, 800", Rn: "2, 4, 6, 8", LD: "0, 0.1, 0.2, 0.3" }[$("sweepKey").value];
+  });
+  $("applyAdvanced").addEventListener("click", () => {
+    if (!["bondMm", "skinMm", "initialK"].every(id => $(id).reportValidity())) return;
+    Object.assign(state, { bondThickness: +$("bondMm").value / 1000, skinThickness: +$("skinMm").value / 1000,
+      T0: +$("initialK").value, shieldCells: +$("cells").value, dt: +$("timeStep").value,
+      maxSoak: +$("maxHours").value * 3600, hotWall: $("hotWall").checked });
+    request("size");
+  });
   function syncInputs() {
     for (const [id, key, f] of fields) { $(id).value = state[key]; $(id + "o").textContent = f(state[key]); }
+    $("bondMm").value = 1000 * (state.bondThickness ?? 0.0002); $("skinMm").value = 1000 * (state.skinThickness ?? 0.002);
+    $("initialK").value = state.T0 ?? 295; $("cells").value = state.shieldCells ?? 60;
+    $("timeStep").value = state.dt ?? 0.5; $("maxHours").value = (state.maxSoak ?? 14400) / 3600; $("hotWall").checked = state.hotWall ?? false;
     for (const b of mats.children) b.setAttribute("aria-pressed", b.dataset.m === state.shield);
   }
 
@@ -535,6 +631,10 @@ const TPS = (() => {
       tile("Heating ends", `${fmt(r.tHeat, 0)}<small> s</small>`, "speed falls to 500 m/s"),
     ].join("");
     setStatus("ok", `Sized in ${c.runs} coupled runs. Bondline peaks ${((r.tPeakTb - r.tHeat) / 60).toFixed(0)} min after heating ends.`);
+    const profiles = r.hist?.profiles;
+    $("cProfile").hidden = !profiles; $("profileTime").disabled = !profiles;
+    if (profiles) { $("profileTime").max = profiles.length - 1; $("profileTime").value = Math.max(0, Math.min(profiles.length - 1, Math.round(r.tPeakTb / (r.hist.t[1] || 5)))); }
+    $("profileNote").textContent = profiles ? "Move the time slider to follow the heat through the tile, adhesive, and skin." : "Compute the current case to inspect temperature through the wall.";
     draw();
   }
   const tile = (k, v, s, lead) => `<div class="tile${lead ? " lead" : ""}"><div class="k">${k}</div><div class="v">${v}</div><div class="s">${s}</div></div>`;
@@ -548,6 +648,42 @@ const TPS = (() => {
       ? `<tr><td>${o.M.name}</td><td class="num">${o.M.rho.toFixed(0)} kg/m³</td><td colspan="5">needs more than 25 cm</td></tr>`
       : `<tr class="${o.sh === best ? "best" : ""}"><td>${o.M.name}</td><td class="num">${o.M.rho.toFixed(0)} kg/m³</td><td class="num">${(o.thickness * 100).toFixed(2)} cm</td><td class="num">${o.mass.toFixed(2)} kg/m²</td><td class="num">${o.res.peakTs.toFixed(0)} K</td><td class="num">${o.M.maxT.toFixed(0)} K</td><td>${o.res.peakTs <= o.M.maxT ? '<span class="pill ok">Within</span>' : '<span class="pill bad">Over</span>'}</td></tr>`).join("");
     setStatus("ok", best ? `Lightest tile that stays within its own surface limit: ${TPS.MATERIALS[best].name}.` : "No tile stays within its surface limit for this entry.");
+  }
+
+  let studyCurrent = null, studyUrl = null;
+  const studyLabels = { V_E: "Entry speed (m/s)", gamma_E_deg: "Entry angle (deg)", beta: "Ballistic coefficient (kg/m²)", Rn: "Nose radius (m)", LD: "Lift-to-drag ratio" };
+  function showSweep(done, p) {
+    studyCurrent = { rows: done.rows, p }; $("sweepResults").hidden = false;
+    $("sweepCaption").textContent = `${TPS.MATERIALS[p.shield].name}; vary ${studyLabels[p.sweepKey]}. Other inputs fixed at V=${p.V_E} m/s, angle=${p.gamma_E_deg}°, beta=${p.beta} kg/m², L/D=${p.LD}, Rn=${p.Rn} m; dt=${p.dt ?? 0.5} s, tile cells=${p.shieldCells ?? 60}, hot wall=${p.hotWall ? "on" : "off"}.`;
+    $("sweepRows").replaceChildren();
+    for (const r of done.rows) {
+      const row = document.createElement("tr");
+      for (const value of [r.value, r.error ? "—" : (r.thickness * 100).toFixed(2), r.error ? "—" : r.mass.toFixed(2), r.error ? "—" : (r.surfaceOk ? "Within limit" : "Over limit"), r.error || "Peak confirmed"]) {
+        const cell = document.createElement("td"); cell.textContent = value; row.appendChild(cell);
+      }
+      $("sweepRows").appendChild(row);
+    }
+    if (studyUrl) URL.revokeObjectURL(studyUrl);
+    const columns = ["value", "thickness", "mass", "peakTs", "peakTb", "peakQ", "captured", "surfaceOk", "error"];
+    const csv = [columns.join(","), ...done.rows.map(r => columns.map(k => JSON.stringify(r[k] ?? "")).join(","))].join("\n");
+    studyUrl = URL.createObjectURL(new Blob([csv], { type: "text/csv" })); $("sweepDownload").href = studyUrl;
+    drawStudy(); setStatus("ok", `${done.rows.filter(r => !r.error).length} of ${done.rows.length} study points sized; unsuccessful points are listed with their errors.`);
+  }
+  function drawStudy() {
+    if (!studyCurrent || $("sweepResults").hidden) return;
+    const { rows, p } = studyCurrent, valid = rows.filter(r => !r.error).sort((a,b) => a.value-b.value);
+    if (!valid.length) { $("cSweepL").hidden = true; $("cSweepMass").hidden = true; return; }
+    const x = valid.map(r => r.value), span = Math.max(...x)-Math.min(...x) || 1, C = css();
+    for (const [id, values, title, units] of [["cSweepL", valid.map(r => r.thickness*100), "Sized tile thickness", "cm"], ["cSweepMass", valid.map(r => r.mass), "Wall areal mass", "kg/m²"]]) {
+      $(id).hidden = false;
+      chart(id, { title, xlabel: studyLabels[p.sweepKey], xlim:[Math.min(...x)-0.04*span,Math.max(...x)+0.04*span], ylim:[0,Math.max(...values)*1.15], yfmt:v => v.toFixed(1)+" "+units, series:[], markers:x.map((v,i)=>({x:v,y:values[i],color:C.cool,label:""})) }, C);
+    }
+  }
+  function drawProfile() {
+    const hist = current.res.hist;
+    if (!hist?.profiles || $("cProfile").hidden || $("sizing-results").hidden) return;
+    const i = Math.min(+$("profileTime").value, hist.profiles.length-1), depth = hist.depth.map(x=>x*1000), temps=hist.profiles[i], C=css();
+    chart("cProfile", { title:`Wall profile at t = ${hist.t[i].toFixed(0)} s`, xlabel:"Depth from hot surface (mm)", xlim:[0,depth[depth.length-1]], ylim:[200,Math.max(current.res.peakTs,500)*1.08], yfmt:v=>v.toFixed(0)+" K", series:[{x:depth,y:temps,color:C.heat,label:"Temperature (K)"}] }, C);
   }
 
   // ---------- charts ----------
@@ -622,13 +758,14 @@ const TPS = (() => {
       series: [{ x: tmin, y: hst.Ts, color: C.heat, label: "tile surface" }, { x: tmin, y: hst.Tb, color: C.cool, label: "bondline" }, { x: tmin, y: hst.Tback, color: C.back, dash: [3, 3], width: 1.3, label: "inner skin" }],
       hlines: [{ y: M.maxT, color: C.bad, label: `tile max use ${M.maxT.toFixed(0)} K` }, { y: LIMIT_BOND, color: C.limit, label: `aluminium limit ${LIMIT_BOND} K` }],
       markers: [{ x: r.tPeakTb / 60, y: r.peakTb, color: C.cool, label: `bondline peak ${r.peakTb.toFixed(0)} K` }] }, C);
-    drawLayup(C);
+    drawLayup(C); drawProfile(); drawStudy();
   }
 
   function drawLayup(C) {
     const { ctx, w, h } = setup($("layup"));
-    const L = current.thickness, layers = [["tile", L, C.tile, TPS.MATERIALS[current.sh].name], ["bond", 0.0002, C.bond, "RTV-560 bond"], ["al", 0.002, C.al, "Al 2219 skin"]];
-    const total = L + 0.0022, x0 = 70, x1 = w - 10, top = 6, hh = 30, sc = (x1 - x0) / total;
+    const L = current.thickness, bond = current.params.bondThickness ?? 0.0002, skin = current.params.skinThickness ?? 0.002;
+    const layers = [["tile", L, C.tile, TPS.MATERIALS[current.sh].name], ["bond", bond, C.bond, "RTV-560 bond"], ["al", skin, C.al, "Al 2219 skin"]];
+    const total = L + bond + skin, x0 = 70, x1 = w - 10, top = 6, hh = 30, sc = (x1 - x0) / total;
     ctx.font = "11px " + mono(); ctx.fillStyle = C.heat; ctx.textAlign = "left"; ctx.textBaseline = "middle";
     ctx.fillText("heat →", 4, top + hh / 2);
     let x = x0;
@@ -636,7 +773,7 @@ const TPS = (() => {
     ctx.strokeStyle = C.rule; ctx.strokeRect(x0 + 0.5, top + 0.5, x - x0 - 1, hh - 1);
     ctx.fillStyle = C.ink; ctx.textBaseline = "top";
     ctx.textAlign = "left"; ctx.fillText(`${layers[0][3]}  ${(L * 100).toFixed(2)} cm`, x0, top + hh + 6);
-    ctx.textAlign = "left"; ctx.fillStyle = C.muted; ctx.fillText("then 0.2 mm RTV bond + 2 mm aluminium skin (right edge)", x0, top + hh + 22);
+    ctx.textAlign = "left"; ctx.fillStyle = C.muted; ctx.fillText(`then ${(bond*1000).toFixed(1)} mm RTV bond + ${(skin*1000).toFixed(1)} mm aluminium skin`, x0, top + hh + 22);
   }
 
   let rz = null;

@@ -1,6 +1,6 @@
 # Reentry Heating & TPS Thermal Model
 
-**[▶ Try it in your browser](https://badrelsayednyu.github.io/reentry-tps/)** — interactive version that runs the same model live.
+**[▶ Try it in your browser](https://badrelsayednyu.github.io/reentry-tps/)** — interactive version that runs the same model live. Includes temperature profiles through the wall, parameter studies with CSV export, published validation figures, and controls for layer thicknesses, initial temperature, grid, time step, soak-back window and the hot-wall correction.
 
 How thick does a capsule's heat shield have to be? This project answers that by coupling three
 models — an entry trajectory, a stagnation-point heating correlation, and a transient multi-layer
