@@ -667,7 +667,7 @@ const TPS = (() => {
     const columns = ["value", "thickness_m", "mass_kg_m2", "peakTs_K", "peakTb_K", "peakQ_W_m2", "captured", "surfaceOk", "error"];
     const quote = value => '"' + String(value ?? "").replaceAll('"', '""') + '"';
     const metadata = ["parameter", "tile", "entry_speed_m_s", "entry_angle_deg", "beta_kg_m2", "L_D", "nose_radius_m", "dt_s", "tile_cells", "initial_K", "bond_m", "skin_m", "max_soak_s", "hot_wall"];
-    const csv = [[...metadata, ...columns].join(","), ...done.rows.map(r => [p.sweepKey, p.shield, p.V_E, p.gamma_E_deg, p.beta, p.LD, p.Rn, p.dt ?? 0.5, p.shieldCells ?? 60, p.T0 ?? 295, p.bondThickness ?? 0.0002, p.skinThickness ?? 0.002, p.maxSoak ?? 14400, p.hotWall ?? false, r.value, r.thickness, r.mass, r.peakTs, r.peakTb, r.peakQ, r.captured, r.surfaceOk, r.error].map(quote).join(","))].join("\n");
+    const csv = [[...metadata, ...columns].join(","), ...done.rows.map(r => { const c = { ...p, [p.sweepKey]: r.value }; return [p.sweepKey, p.shield, c.V_E, c.gamma_E_deg, c.beta, c.LD, c.Rn, p.dt ?? 0.5, p.shieldCells ?? 60, p.T0 ?? 295, p.bondThickness ?? 0.0002, p.skinThickness ?? 0.002, p.maxSoak ?? 14400, p.hotWall ?? false, r.value, r.thickness, r.mass, r.peakTs, r.peakTb, r.peakQ, r.captured, r.surfaceOk, r.error].map(quote).join(","); })].join("\n");
     studyUrl = URL.createObjectURL(new Blob([csv], { type: "text/csv" })); $("sweepDownload").href = studyUrl;
     drawStudy(); setStatus("ok", `${done.rows.filter(r => !r.error).length} of ${done.rows.length} study points sized; unsuccessful points are listed with their errors.`);
   }
