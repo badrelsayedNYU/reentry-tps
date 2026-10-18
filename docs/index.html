@@ -654,7 +654,7 @@ const TPS = (() => {
   const studyLabels = { V_E: "Entry speed (m/s)", gamma_E_deg: "Entry angle (deg)", beta: "Ballistic coefficient (kg/m²)", Rn: "Nose radius (m)", LD: "Lift-to-drag ratio" };
   function showSweep(done, p) {
     studyCurrent = { rows: done.rows, p }; $("sweepResults").hidden = false;
-    $("sweepCaption").textContent = `${TPS.MATERIALS[p.shield].name}; vary ${studyLabels[p.sweepKey]}. Other inputs fixed at V=${p.V_E} m/s, angle=${p.gamma_E_deg}°, beta=${p.beta} kg/m², L/D=${p.LD}, Rn=${p.Rn} m; dt=${p.dt ?? 0.5} s, tile cells=${p.shieldCells ?? 60}, hot wall=${p.hotWall ? "on" : "off"}.`;
+    $("sweepCaption").textContent = `${TPS.MATERIALS[p.shield].name}; vary ${studyLabels[p.sweepKey]}. Other inputs fixed at V=${p.V_E} m/s, angle=${p.gamma_E_deg}°, beta=${p.beta} kg/m², L/D=${p.LD}, Rn=${p.Rn} m; dt=${p.dt ?? 0.5} s, tile cells=${p.shieldCells ?? 60}, hot wall=${p.hotWall ? "on" : "off"}; initial wall=${p.T0 ?? 295} K, bond=${1000*(p.bondThickness ?? 0.0002)} mm, skin=${1000*(p.skinThickness ?? 0.002)} mm, maximum soak=${(p.maxSoak ?? 14400)/3600} h.`;
     $("sweepRows").replaceChildren();
     for (const r of done.rows) {
       const row = document.createElement("tr");
@@ -664,8 +664,10 @@ const TPS = (() => {
       $("sweepRows").appendChild(row);
     }
     if (studyUrl) URL.revokeObjectURL(studyUrl);
-    const columns = ["value", "thickness", "mass", "peakTs", "peakTb", "peakQ", "captured", "surfaceOk", "error"];
-    const csv = [columns.join(","), ...done.rows.map(r => columns.map(k => JSON.stringify(r[k] ?? "")).join(","))].join("\n");
+    const columns = ["value", "thickness_m", "mass_kg_m2", "peakTs_K", "peakTb_K", "peakQ_W_m2", "captured", "surfaceOk", "error"];
+    const quote = value => '"' + String(value ?? "").replaceAll('"', '""') + '"';
+    const metadata = ["parameter", "tile", "entry_speed_m_s", "entry_angle_deg", "beta_kg_m2", "L_D", "nose_radius_m", "dt_s", "tile_cells", "initial_K", "bond_m", "skin_m", "max_soak_s", "hot_wall"];
+    const csv = [[...metadata, ...columns].join(","), ...done.rows.map(r => [p.sweepKey, p.shield, p.V_E, p.gamma_E_deg, p.beta, p.LD, p.Rn, p.dt ?? 0.5, p.shieldCells ?? 60, p.T0 ?? 295, p.bondThickness ?? 0.0002, p.skinThickness ?? 0.002, p.maxSoak ?? 14400, p.hotWall ?? false, r.value, r.thickness, r.mass, r.peakTs, r.peakTb, r.peakQ, r.captured, r.surfaceOk, r.error].map(quote).join(","))].join("\n");
     studyUrl = URL.createObjectURL(new Blob([csv], { type: "text/csv" })); $("sweepDownload").href = studyUrl;
     drawStudy(); setStatus("ok", `${done.rows.filter(r => !r.error).length} of ${done.rows.length} study points sized; unsuccessful points are listed with their errors.`);
   }
