@@ -45,7 +45,7 @@ def test_peak_decreases_with_thickness(case, sized):
 
 def test_harder_entry_needs_more_shield(case, sized):
     _, r = sized
-    harder = replace(case, V_E=8200.0)
+    harder = replace(case, beta=600.0)   # heavier vehicle: decelerates lower, in denser air
     assert size(harder, tol=2e-4).thickness > r.thickness
 
 
